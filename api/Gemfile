@@ -43,6 +43,12 @@ gem 'bootsnap', require: false
 gem 'kaminari'
 gem 'listen', '~> 3.2'
 
+# Windows has no IANA zoneinfo database — Rails needs this gem to resolve
+# timezones there. No-op on other platforms. (Local dev environment need,
+# not an app fix — see docker-compose.yml / config/application.yml for
+# the rest of the local run setup.)
+gem 'tzinfo-data', platforms: %i[mingw mswin x64_mingw jruby]
+
 group :development, :test do
   gem 'byebug', platforms: %i[mri mingw x64_mingw]
   gem 'factory_bot_rails'
