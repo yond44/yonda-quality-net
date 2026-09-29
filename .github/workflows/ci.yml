@@ -1,0 +1,123 @@
+# Quality net: runs on every push to main and every pull request.
+# Each job is one check with a plain-language name; see assessment/02-quality-system.md.
+name: Quality net
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Workflow gate: a PR must carry its inputs (spec, criteria, plan, test) ──
+  gate:
+    name: "Gate: Definition of Ready"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check the PR carries its inputs
+        run: node .github/scripts/definition-of-ready.mjs
+
+  gate-selftest:
+    name: "Gate: self-test"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test the gate's own rules
+        run: node --test .github/scripts/definition-of-ready.test.mjs
+
+  # ── Test net ─────────────────────────────────────────────────────────────────
+  api-boot:
+    name: "Net: API boots in production mode"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    env:
+      RAILS_ENV: production
+      SECRET_KEY_BASE: ci-not-a-real-secret
+      ALLOWED_ORIGINS: http://localhost:5173
+      GEMINI_API_KEY: ci-dummy
+      GEMINI_LIVE_MODEL: ci-dummy
+      GEMINI_FLASH_MODEL: ci-dummy
+      GEMINI_PRO_MODEL: ci-dummy
+      FORCE_SSL: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          working-directory: api
+          bundler-cache: true
+      - name: Load every file the way production does
+        run: bundle exec rails zeitwerk:check
+
+  api-tests:
+    name: "Net: API tests (audit findings + critical paths)"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+    env:
+      RAILS_ENV: test
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      REDIS_URL: redis://localhost:6379/1
+      SECRET_KEY_BASE: ci-not-a-real-secret
+      ALLOWED_ORIGINS: http://localhost:5173
+      APP_BASE_URL: http://localhost:3001
+      GEMINI_API_KEY: ci-dummy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          working-directory: api
+          bundler-cache: true
+      - name: Create the test database
+        run: bundle exec rails db:create db:migrate
+      - name: Run the test net
+        run: bundle exec rspec --format progress --format json --out rspec.json
+      - name: Summary per finding
+        if: always()
+        run: node ../.github/scripts/rspec-summary.mjs rspec.json
+
+  web:
+    name: "Net: web type-check and build"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: Type-check and build
+        run: npm run build
