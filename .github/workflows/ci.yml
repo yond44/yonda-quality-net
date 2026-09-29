@@ -54,6 +54,7 @@ jobs:
       GEMINI_FLASH_MODEL: ci-dummy
       GEMINI_PRO_MODEL: ci-dummy
       FORCE_SSL: "false"
+      WEB_BASE_URL: http://localhost:5173
     steps:
       - uses: actions/checkout@v5
       - uses: ruby/setup-ruby@v1
@@ -89,7 +90,7 @@ jobs:
       REDIS_URL: redis://localhost:6379/1
       SECRET_KEY_BASE: ci-not-a-real-secret
       ALLOWED_ORIGINS: http://localhost:5173
-      APP_BASE_URL: http://localhost:3001
+      WEB_BASE_URL: http://localhost:5173
       GEMINI_API_KEY: ci-dummy
     steps:
       - uses: actions/checkout@v5

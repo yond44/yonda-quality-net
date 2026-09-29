@@ -22,6 +22,10 @@ Rails.application.configure do
   # Enable log buffering.
   config.force_ssl = ENV.fetch("FORCE_SSL", "true") == "true"
 
+  # Candidate invite links are built from WEB_BASE_URL (the web app). Without it every
+  # invite would silently point at localhost, so refuse to boot instead (audit F3).
+  raise "WEB_BASE_URL must be set in production (the web app's public address)" if ENV["WEB_BASE_URL"].blank?
+
   # Log to STDOUT — required for log aggregation in containerized deployments.
   logger           = ActiveSupport::Logger.new($stdout)
   logger.formatter = config.log_formatter

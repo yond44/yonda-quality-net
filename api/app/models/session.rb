@@ -25,8 +25,10 @@ class Session < ApplicationRecord
   def ended?   = status == 'ended'
   def pending? = status == 'pending'
 
+  # The candidate opens the interview page of the web app (web/src/App.tsx,
+  # "/interview/:token"), not the API, so the link uses the web app's address (audit F3).
   def invite_url
-    base = ENV.fetch('APP_BASE_URL', 'http://localhost:3001')
+    base = ENV.fetch('WEB_BASE_URL', 'http://localhost:5173').chomp('/')
     "#{base}/interview/#{invite_token}"
   end
 

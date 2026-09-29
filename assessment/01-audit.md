@@ -6,7 +6,7 @@
 1. I read the code and compared it to the specs.
 2. I ran the whole app on my machine and **reproduced the main problems for real**. Each finding below says how to reproduce it.
 
-**Status:** F22, F1, F2 and F23 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
+**Status:** F22, F1, F2, F23 and F3 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
 
 ---
 
@@ -82,7 +82,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F1 | Login lets any user pick any company's workspace | **P1** | built-wrong | LIVE | **fixed** |
 | F2 | One company can read **and change** another company's candidate data | **P1** | built-wrong | LIVE | **fixed** |
 | F23 | A valid login from one company works inside **any other company** (found while fixing F2) | **P1** | built-wrong | TEST | **fixed** |
-| F3 | Invite links lead candidates to a 404 page | **P1** | built-wrong | LIVE | open |
+| F3 | Invite links lead candidates to a 404 page | **P1** | built-wrong | LIVE | **fixed** |
 | F4 | Removing a skill in an edit form doesn't remove it | **P1** | built-wrong | LIVE | open |
 | F5 | AI levels in an unexpected format are saved as **L1** | **P1** | built-wrong | LIVE | open |
 | F6 | Anyone with the invite link can end the interview as "all covered" | **P1** | built-wrong | LIVE | open |
@@ -235,6 +235,17 @@ This corrupts another company's hiring decisions.
 3. The same token on the website address: 200, it works.
 
 > **In plain words:** the invitation has the right room number but the wrong building address.
+
+**Status: fixed.**
+- **Test first:** [`f3_invite_url_spec.rb`](../api/spec/models/f3_invite_url_spec.rb) was committed while it failed. The fix made it pass, with the checks unchanged. Its second check reads the web app's real route list (`web/src/App.tsx`), so renaming the page on **either** side turns CI red again.
+- **The fix:**
+  - Invite links now use a new setting, **`WEB_BASE_URL`**, the web app's address ([`session.rb`](../api/app/models/session.rb)).
+  - `APP_BASE_URL` was only ever used for invite links, so it's replaced everywhere: the config sample, the README, the Kubernetes config and CI.
+  - **Production refuses to start without `WEB_BASE_URL`** ([`production.rb`](../api/config/environments/production.rb)). Otherwise every invite would quietly point at `localhost`, the same silent failure in a new form. The CI production-boot check now sets it.
+- **Why a new setting, not a new value for `APP_BASE_URL`?** Its documented meaning was "the backend's address". Changing what an existing setting means is how F3 happened in the first place.
+
+**What remains after the fix (disclosed, not hidden):**
+- **Deploy step:** set `WEB_BASE_URL` to the website's public address. Links already sent to candidates before the fix still point at the backend. They must be re-sent (or the backend must redirect `/interview/*` to the website).
 
 ---
 
