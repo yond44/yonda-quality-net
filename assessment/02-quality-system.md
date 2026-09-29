@@ -17,7 +17,7 @@ Everything runs in GitHub Actions: [`.github/workflows/ci.yml`](../.github/workf
 | **Gate: self-test** | The gate's own rules can't be silently weakened | A broken or loosened gate |
 | **Net: API boots in production mode** | The backend actually starts with production settings | **F22** (P0): production couldn't boot |
 | **Net: API tests (audit findings + critical paths)** | Data integrity and tenant isolation on the risk-carrying paths, plus the main journey | **F1–F8, F23**, and any regression on the critical path |
-| **Net: web type-check and build** | The web app compiles and builds | Type errors and broken builds in the frontend |
+| **Net: web tests, type-check and build** | The web app's risk-carrying logic, and that it compiles and builds | **F24**, plus type errors and broken builds in the frontend |
 
 ### What the gate checks
 
@@ -50,6 +50,7 @@ One spec file per **class of risk**, not a coverage percentage:
 | [`f6_audio_complete_spec.rb`](../api/spec/requests/f6_audio_complete_spec.rb) | **F6** false "all covered" | A never-started or uncovered interview is not recorded as `all_covered` |
 | [`f7_skill_identity_spec.rb`](../api/spec/services/f7_skill_identity_spec.rb) | **F7** skills keyed on the AI's wording | Skills stay tied to the configuration, and a dropped skill fails loudly |
 | [`f8_fitgap_contract_spec.rb`](../api/spec/requests/f8_fitgap_contract_spec.rb) | **F8** web ↔ API contract | The payload has every field the **web's own TypeScript type** requires |
+| [`internetSpeedTest.test.ts`](../web/src/utils/internetSpeedTest.test.ts) | **F24** the internet check blocks good connections | The real check, run on a simulated network, passes the reported connection, measures against our own backend, one thing at a time, and never passes when it couldn't measure |
 | [`critical_path_spec.rb`](../api/spec/requests/critical_path_spec.rb) | **Regression on the main journey** | Log in → assessment → invite → candidate opens it; interview → portfolio → fit/gap |
 
 **Two design choices keep the net honest:**
@@ -68,7 +69,7 @@ Knowing the gaps is part of the system. These are known and accepted for now:
 |---|---|---|
 | **Real AI behaviour** (question quality, probing, rating accuracy) | Tests use fake models, so they're deterministic and free | The AI could interview badly and no check would notice. That needs a separate evaluation set against the spec, not unit tests. |
 | **The live voice interview** (WebSocket audio, reconnects, timing) | Needs a real browser, audio and Gemini Live | Races **F11** (coverage updates) and **F12** (lost transcript lines) are untested |
-| **Frontend behaviour** | No UI test framework yet; the web job only type-checks and builds | **F21** (error states), **F24** (the pre-interview internet check) and the web side of F4 are untested. The build passes even if a page shows wrong data. |
+| **Frontend screens** | Web tests (Vitest) cover logic such as the internet check (F24), but no test renders a page or clicks through it | **F21** (error states) and the web side of F4 are untested. The build passes even if a page shows wrong data. |
 | **P2/P3 findings** other than F8 | Time goes to P0/P1 first, as the brief allows | F9–F21 have no checks yet (listed as open in the audit) |
 | **Production configuration beyond boot** | The boot check uses dummy secrets | **F16**: the real deployment files still lack secrets and pin `:latest` images |
 | **Quality of a PR's inputs** | The gate checks the inputs **exist and have the right shape**, not whether they're **good** | A vague spec or a weak test can still pass. Human review is still needed. The gate removes "forgot the spec", not bad judgment. |
@@ -94,10 +95,10 @@ RAILS_ENV=production SECRET_KEY_BASE=x ALLOWED_ORIGINS=http://x GEMINI_API_KEY=x
   bundle exec rails zeitwerk:check
 ```
 
-**Gate self-test and the web build:**
+**Gate self-test, web tests and the web build:**
 ```bash
 node --test .github/scripts/definition-of-ready.test.mjs
-cd web && npm ci && npm run build
+cd web && npm ci && npm test && npm run build
 ```
 
 ## How to extend it
@@ -118,7 +119,7 @@ A CI check only **blocks** a merge when GitHub is told it's required. This is a 
    - `Gate: self-test`
    - `Net: API boots in production mode`
    - `Net: API tests (audit findings + critical paths)`
-   - `Net: web type-check and build`
+   - `Net: web tests, type-check and build`
 
    A check only appears in that list after it has run once, and the gate runs on the first pull request.
 3. Leave **"Do not allow bypassing"** unticked. The brief allows the bulk of the work as direct commits to `main`, so the owner can still push directly, but every pull request must pass.

@@ -107,7 +107,7 @@ jobs:
         run: node ../.github/scripts/rspec-summary.mjs rspec.json
 
   web:
-    name: "Net: web type-check and build"
+    name: "Net: web tests, type-check and build"
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -120,5 +120,9 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
+      # Each failing test also appears as an annotation on the run page (audit F24 and later web findings).
+      - name: Tests (audit findings)
+        run: npm test -- --reporter=default --reporter=github-actions
       - name: Type-check and build
+        if: success() || failure()
         run: npm run build
