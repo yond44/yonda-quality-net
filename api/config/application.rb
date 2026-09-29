@@ -25,10 +25,15 @@ module AiInterview
       #{config.root}/app/lib
       #{config.root}/app/middlewares
       #{config.root}/app/services
-      #{config.root}/app/channels
       #{config.root}/app/clients
       #{config.root}/app/workers
     ]
+
+    # app/channels holds the WebSocket Rack middlewares. They are boot-time code,
+    # loaded explicitly by config/initializers/websocket.rb before routing, so the
+    # autoloader must not ALSO manage them: when production eager-loads, it expects
+    # file names to match class names and crashed on WebSocket vs Websocket (audit F22).
+    Rails.autoloaders.main.ignore(config.root.join('app/channels'))
 
     # Use UUID primary keys by default
     config.generators do |g|
