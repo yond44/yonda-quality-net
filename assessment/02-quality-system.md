@@ -90,6 +90,7 @@ bundle exec rspec --format json --out rspec.json && node ../.github/scripts/rspe
 cd api
 RAILS_ENV=production SECRET_KEY_BASE=x ALLOWED_ORIGINS=http://x GEMINI_API_KEY=x \
   GEMINI_LIVE_MODEL=x GEMINI_FLASH_MODEL=x GEMINI_PRO_MODEL=x FORCE_SSL=false \
+  WEB_BASE_URL=http://localhost:5173 \
   bundle exec rails zeitwerk:check
 ```
 
@@ -134,7 +135,8 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 | **F1** login picks any company | [36548723182](https://github.com/yond44/yonda-quality-net/actions/runs/36548723182): 4/4 failing | [36549163695](https://github.com/yond44/yonda-quality-net/actions/runs/36549163695) | Users belong to one organization, and the token scheme comes only from it |
 | **F2** one company reads or changes another's data | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 4/5 failing | [36555110517](https://github.com/yond44/yonda-quality-net/actions/runs/36555110517) (F2 no longer flagged) | Portfolios and portfolio skills are looked up through the caller's company (via their session), never by bare ID |
 | **F23** a valid token opens another company *(new finding, found while fixing F2)* | [36555404757](https://github.com/yond44/yonda-quality-net/actions/runs/36555404757): 3/4 failing | [36555539895](https://github.com/yond44/yonda-quality-net/actions/runs/36555539895) (F23 no longer flagged) | The verified token's company must equal the request's company, checked once where every logged-in request passes |
-| **F3–F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 13 failing, 0 errors | *Task 3* | *Task 3* |
+| **F3** invite link opens a 404 | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 1/2 failing | [36557839764](https://github.com/yond44/yonda-quality-net/actions/runs/36557839764) (F3 no longer flagged) | Invite links use a new `WEB_BASE_URL` (the web app), and production refuses to boot without it |
+| **F4–F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 12 failing, 0 errors | *Task 3* | *Task 3* |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
 
