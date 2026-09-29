@@ -434,7 +434,7 @@ These aren't bugs in the code. **Nobody defined them**, so nobody can say what "
 
 | # | What's missing | Why it matters |
 |---|----------------|----------------|
-| M1 | **No automated tests and no CI** | Nothing above would have been caught, and nothing stops it coming back. This is the biggest gap for this engagement, and Task 2 builds it. |
+| M1 | **No automated tests and no CI** | Nothing above would have been caught, and nothing stops it coming back. This is the biggest gap for this engagement, and Task 2 builds it. **Addressed:** a CI net and a Definition-of-Ready gate now run on every change (see [`02-quality-system.md`](02-quality-system.md)). The CI found F22 by itself on its first run. |
 | M2 | **No rule for which users belong to which company**, and no way to create users except the Rails console | This is the root cause of F1. *Decided for the F1 fix: one user belongs to one company (assumption, see F1). User creation is still console-only.* |
 | M3 | **The spec and the code disagree on how an interview ends** | The specs say the AI closes on its own and invites the candidate's questions. The code forbids closing without a system signal and forbids asking questions ([`system_prompt_compiler.rb:108-129`](../api/app/services/assessments/system_prompt_compiler.rb#L108-L129)). One of them is out of date, and nobody can say which. |
 | M4 | **Rules that exist only in the code**: auto-cover after 4 probes, pacing levels, max 10 discovered skills | These rules decide when interviews end, but they aren't written down anywhere to review or test against. |
