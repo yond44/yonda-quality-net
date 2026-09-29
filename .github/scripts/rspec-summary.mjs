@@ -56,3 +56,11 @@ for (const g of rows) {
   out(`| **${g.id}** | ${protects} | ${result} |`);
 }
 out(`\n_${data.summary_line || ''}_`);
+
+// One annotation per failing check: shown on the run page and in the PR, no log reading needed.
+if (process.env.GITHUB_ACTIONS) {
+  for (const g of failing) {
+    const protects = g.title.replace(/^(F\d+|Critical path)\s*:\s*/, '');
+    console.log(`::error title=${g.id} failing (${g.failed.length} of ${g.total})::${protects} | ${g.failed.join(' | ')}`);
+  }
+}

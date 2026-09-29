@@ -16,12 +16,12 @@ jobs:
   gate:
     name: "Gate: Definition of Ready"
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - name: Check the PR carries its inputs
@@ -29,10 +29,10 @@ jobs:
 
   gate-selftest:
     name: "Gate: self-test"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - name: Test the gate's own rules
@@ -41,7 +41,7 @@ jobs:
   # ── Test net ─────────────────────────────────────────────────────────────────
   api-boot:
     name: "Net: API boots in production mode"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: api
@@ -55,7 +55,7 @@ jobs:
       GEMINI_PRO_MODEL: ci-dummy
       FORCE_SSL: "false"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ruby/setup-ruby@v1
         with:
           working-directory: api
@@ -65,7 +65,7 @@ jobs:
 
   api-tests:
     name: "Net: API tests (audit findings + critical paths)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: api
@@ -92,7 +92,7 @@ jobs:
       APP_BASE_URL: http://localhost:3001
       GEMINI_API_KEY: ci-dummy
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ruby/setup-ruby@v1
         with:
           working-directory: api
@@ -107,13 +107,13 @@ jobs:
 
   web:
     name: "Net: web type-check and build"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
