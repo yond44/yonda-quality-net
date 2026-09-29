@@ -6,7 +6,7 @@
 1. I read the code and compared it to the specs.
 2. I ran the whole app on my machine and **reproduced the main problems for real**. Each finding below says how to reproduce it.
 
-**Status:** F22 and F1 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
+**Status:** F22, F1 and F2 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
 
 ---
 
@@ -78,7 +78,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 |---|---------|-----|------|----------|--------|
 | F22 | The backend cannot start in its production configuration | **P0** | built-wrong | LIVE + CI | **fixed** |
 | F1 | Login lets any user pick any company's workspace | **P1** | built-wrong | LIVE | **fixed** |
-| F2 | One company can read **and change** another company's candidate data | **P1** | built-wrong | LIVE | open |
+| F2 | One company can read **and change** another company's candidate data | **P1** | built-wrong | LIVE | **fixed** |
 | F3 | Invite links lead candidates to a 404 page | **P1** | built-wrong | LIVE | open |
 | F4 | Removing a skill in an edit form doesn't remove it | **P1** | built-wrong | LIVE | open |
 | F5 | AI levels in an unexpected format are saved as **L1** | **P1** | built-wrong | LIVE | open |
@@ -179,6 +179,14 @@ This corrupts another company's hiring decisions.
 4. A fit/gap report for Company B's candidate is created, and now shows "gap −2" because of my change.
 
 > **In plain words:** the building checks your badge at the front door (sessions), but inside, every office opens with just the room number. The records that "belong to" a session were never given their own lock.
+
+**Status: fixed.**
+- **Test first:** [`f2_cross_tenant_portfolio_spec.rb`](../api/spec/requests/f2_cross_tenant_portfolio_spec.rb) was committed while 4 of its 5 examples failed. The fix commit made all 5 pass, with the checks unchanged. The 5th example is a control: company B still sees its own portfolio, so the fix can't be a blanket 404.
+- **The fix:** portfolios and portfolio skills now have a `for_tenant` lookup that finds the company **through the session** they belong to ([`portfolio.rb`](../api/app/models/portfolio.rb), [`portfolio_skill.rb`](../api/app/models/portfolio_skill.rb)). Every lookup by ID in the two controllers goes through it. Fit/gap reports are only ever reached through an already-checked portfolio. A record from another company now answers **404**, as if it doesn't exist, and nothing is read or changed.
+- **Why not add a company column to these tables?** That would make the automatic `TenantScoped` filter cover them too, but it needs a data backfill, and it would change how the background jobs and the live-interview WebSocket (which the net can't test, see `02-quality-system.md`) create these records. The scoped lookup closes the hole with a small, tested change. The column is the better long-term design, and it's recorded as follow-up work.
+
+**What remains after the fix (disclosed, not hidden):**
+- **The protection is explicit, not automatic.** A new endpoint that loads a portfolio with a bare `Portfolio.find` would reopen this hole. The F2 spec only covers the endpoints that exist today.
 
 ---
 

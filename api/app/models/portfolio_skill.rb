@@ -11,6 +11,9 @@ class PortfolioSkill < ApplicationRecord
   validates :ai_confidence, inclusion: { in: CONFIDENCE_LEVELS }
   validates :competency_summary, presence: true
 
+  # No tenant_id of its own: the company comes from portfolio -> session (audit F2).
+  scope :for_tenant, ->(tenant_id) { where(portfolio_id: Portfolio.for_tenant(tenant_id).select(:id)) }
+
   # evidence is stored as JSONB array of quote strings
   def evidence_quotes
     Array(evidence)

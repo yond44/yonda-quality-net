@@ -131,7 +131,8 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 |---|---|---|---|
 | **F22** production can't boot | [36547094896](https://github.com/yond44/yonda-quality-net/actions/runs/36547094896): *the CI found it by itself on its first run* | [36548570736](https://github.com/yond44/yonda-quality-net/actions/runs/36548570736) | Removed Active Job config for a framework never loaded; the autoloader no longer also manages boot-time WebSocket middleware |
 | **F1** login picks any company | [36548723182](https://github.com/yond44/yonda-quality-net/actions/runs/36548723182): 4/4 failing | [36549163695](https://github.com/yond44/yonda-quality-net/actions/runs/36549163695) | Users belong to one organization, and the token scheme comes only from it |
-| **F2–F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 17 failing, 0 errors | *Task 3* | *Task 3* |
+| **F2** one company reads or changes another's data | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 4/5 failing | the `fix(F2)` commit's run | Portfolios and portfolio skills are looked up through the caller's company (via their session), never by bare ID |
+| **F3–F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 13 failing, 0 errors | *Task 3* | *Task 3* |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
 
