@@ -40,6 +40,7 @@ Beyond that, there are three groups of problems:
    - Any assessor can log into *another company's* workspace just by adding one header to the login request (F1).
    - Even without that trick, any assessor can read *and change* another company's candidate ratings by guessing an ID number (F2).
    - I proved both on the running app: from Company A's account, I downloaded Company B's confidential candidate report, then changed that candidate's rating from L4 to L1.
+   - A normal Company A login also works **inside Company B**, if it's sent in a slightly different form with Company B's name in a header (F23). Found while fixing F2.
 2. **Candidates can't start their interview.** The invite link points to the backend server instead of the website, so the candidate sees a "404 Not Found" page (F3).
 3. **Hiring results can be silently wrong, while the screen says everything worked.**
    - Removing a skill in the edit form doesn't actually remove it (F4).
@@ -69,6 +70,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 - **LIVE**: I reproduced it on the running app.
 - **CODE**: the code clearly does this, but I haven't triggered it live yet.
 - **RISK**: it can plausibly happen (usually timing- or AI-dependent), but it needs a test to confirm.
+- **TEST**: reproduced by an automated request through the whole backend (middleware, login check, database), the same path a real request takes.
 
 ---
 
@@ -79,6 +81,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F22 | The backend cannot start in its production configuration | **P0** | built-wrong | LIVE + CI | **fixed** |
 | F1 | Login lets any user pick any company's workspace | **P1** | built-wrong | LIVE | **fixed** |
 | F2 | One company can read **and change** another company's candidate data | **P1** | built-wrong | LIVE | **fixed** |
+| F23 | A valid login from one company works inside **any other company** (found while fixing F2) | **P1** | built-wrong | TEST | open |
 | F3 | Invite links lead candidates to a 404 page | **P1** | built-wrong | LIVE | open |
 | F4 | Removing a skill in an edit form doesn't remove it | **P1** | built-wrong | LIVE | open |
 | F5 | AI levels in an unexpected format are saved as **L1** | **P1** | built-wrong | LIVE | open |
@@ -189,6 +192,25 @@ This corrupts another company's hiring decisions.
 - **The protection is explicit, not automatic.** A new endpoint that loads a portfolio with a bare `Portfolio.find` would reopen this hole. The F2 spec only covers the endpoints that exist today.
 
 ---
+
+### F23 — A valid login from one company works inside any other company · P1 · TEST
+
+*Found while fixing F2. The first audit filed "company chosen from unchecked data" under F17 as a P2 weakness. Trying to exploit it showed it's a full cross-company breach, so it's re-ranked here as its own P1.*
+
+**Impact:** any logged-in user of Company A can read **and change everything** in Company B: assessments, interviews, vacancies and candidate reports. They only need their own normal login. This defeats the F1 and F2 fixes, because it doesn't need a wrong token or a guessed ID.
+
+**What goes wrong:** two parts of the backend read the same login header in two different ways, and nobody checks that they agree.
+- **Which company is this request for?** The tenant middleware only reads the token if the header starts with `Bearer `. Otherwise it takes the company from the `X-Tenant-Scheme` header, or from the `Referer` ([`tenant_resolver_middleware.rb:33-51`](../api/app/middlewares/tenant_resolver_middleware.rb#L33-L51)).
+- **Is this user logged in?** The login check accepts the token in **any** form: it just takes the last word of the header ([`authorize_api_request.rb:65-69`](../api/app/auth/authorize_api_request.rb#L65-L69)).
+- **The missing check:** nothing compares the company written inside the (verified) token with the company the request is working in.
+
+**How I reproduced it** (an automated request through the whole backend, with Company A's valid token):
+1. `Authorization: Bearer <A's token>` plus `X-Tenant-Scheme: company-b` shows only Company A's data. The normal form is safe.
+2. `Authorization: Token <A's token>` plus `X-Tenant-Scheme: company-b` returns **Company B's assessments**.
+3. Just `Authorization: <A's token>` (no prefix), with a `Referer` on Company B's address, does the same.
+4. A `PUT` in the same form **renamed Company B's assessment**: 200 OK.
+
+> **In plain words:** the guard at the door reads your badge only if you hold it face-up. If you hold it upside down, the guard asks "which floor?" and believes your answer, while the turnstile still lets the badge through because it's a real badge.
 
 ### F3 — Invite links lead candidates to a 404 page · P1 · LIVE
 
@@ -387,7 +409,7 @@ It becomes **P1 if it's seen happening**.
 ### F17 — Login security gaps · P2 · CODE
 
 - **Dev token fallback:** [`authAtom.ts:10`](../web/src/stores/authAtom.ts#L10) falls back to a developer token (`VITE_DEV_TOKEN`). If that's set when the site is built, every visitor is logged in as that user, and "log out" can't remove it.
-- **Company chosen from unchecked data:** the company is picked from the login token **without checking its signature** first, then from the `Referer` header, then from a default company ([`tenant_resolver_middleware.rb:33-51`](../api/app/middlewares/tenant_resolver_middleware.rb#L33-L51), [`organization.rb:13-27`](../api/app/models/organization.rb#L13-L27)).
+- **Company chosen from unchecked data:** the company is picked from the login token **without checking its signature** first, then from the `Referer` header, then from a default company ([`tenant_resolver_middleware.rb:33-51`](../api/app/middlewares/tenant_resolver_middleware.rb#L33-L51), [`organization.rb:13-27`](../api/app/models/organization.rb#L13-L27)). *Exploiting this turned out to be a full cross-company breach, so it moved to its own P1: **F23**.*
 - **Removed users keep access:** the backend trusts the token without looking up the user ([`authorize_api_request.rb:8`](../api/app/auth/authorize_api_request.rb#L8)), so a deleted or demoted user keeps access for 3 days.
 - **Token storage:** the login token is kept in `localStorage`, where any injected script on the page can read it.
 - **Public "secret":** the interview's anti-cheating code is written in the public source code ([`audio_websocket_middleware.rb:16`](../api/app/channels/audio_websocket_middleware.rb#L16)).
@@ -456,7 +478,7 @@ These aren't bugs in the code. **Nobody defined them**, so nobody can say what "
 
 ## Patterns: why these bugs keep happening
 
-1. **Keeping companies apart is a habit, not a built-in rule.** Safety depends on each developer remembering an add-on and a special lookup method. Records without a company column slip through (F2). The login has no idea of company membership (F1, M2), and the live-monitor connection doesn't check roles (F13).
+1. **Keeping companies apart is a habit, not a built-in rule.** Safety depends on each developer remembering an add-on and a special lookup method. Records without a company column slip through (F2). The login has no idea of company membership (F1, M2), the request's company is never checked against the login's company (F23), and the live-monitor connection doesn't check roles (F13).
    *Fix the whole class:* always load records through their company-owned parent, and add a "Company A can't see Company B" test for every endpoint.
 2. **No checks at the borders between systems.**
    - Frontend ↔ backend: data shapes are agreed by convention only (F8, F18).
@@ -474,7 +496,7 @@ These aren't bugs in the code. **Nobody defined them**, so nobody can say what "
 
 **Don't ship.** Each of these blocks the release on its own:
 - **F22:** the backend can't start in production at all.
-- **F1 and F2:** customers' data isn't separated, and one customer can change another's hiring results.
+- **F1, F2 and F23:** customers' data isn't separated, and one customer can change another's hiring results.
 - **F3:** candidates can't open their interview link.
 - **F4, F5, F6:** hiring results can be silently wrong while the screen says everything is fine.
 
@@ -526,6 +548,7 @@ The first version of this file covered only part of the code. Here's where each 
 | F5: `ai_level` type mismatch (number vs `"L3"`) | **F18**, and **F5** | Split in two. The display issue stays P3 (F18). The bigger risk it pointed to, that `"L3"` is saved as L1, is now the separate **P1 F5**, reproduced live. |
 | "What worries me" notes (unverified token, race conditions, trusting AI output) | **F17, F11, F5/F10** | Each became its own finding with evidence |
 | — | **F1, F3, F4, F6, F7, F9, F12–F14, F16, F19, F20, M2–M8** | New in the full sweep |
+| F17 bullet "company chosen from unchecked data" | **F23** (P1) | Found while fixing F2: exploiting it gave full read and write access to another company. Re-ranked from P2 to P1. |
 
 ---
 
