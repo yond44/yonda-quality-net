@@ -6,7 +6,7 @@
 1. I read the code and compared it to the specs.
 2. I ran the whole app on my machine and **reproduced the main problems for real**. Each finding below says how to reproduce it.
 
-**Status:** every finding is `open`. I will update the Status column as fixes land in Task 3.
+**Status:** F22 and F1 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
 
 ---
 
@@ -76,8 +76,8 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 
 | # | Problem | Sev | Type | Evidence | Status |
 |---|---------|-----|------|----------|--------|
-| F22 | The backend cannot start in its production configuration | **P0** | built-wrong | LIVE + CI | open |
-| F1 | Login lets any user pick any company's workspace | **P1** | built-wrong | LIVE | open |
+| F22 | The backend cannot start in its production configuration | **P0** | built-wrong | LIVE + CI | **fixed** |
+| F1 | Login lets any user pick any company's workspace | **P1** | built-wrong | LIVE | **fixed** |
 | F2 | One company can read **and change** another company's candidate data | **P1** | built-wrong | LIVE | open |
 | F3 | Invite links lead candidates to a 404 page | **P1** | built-wrong | LIVE | open |
 | F4 | Removing a skill in an edit form doesn't remove it | **P1** | built-wrong | LIVE | open |
@@ -137,6 +137,19 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 3. Use that token to list assessments. I get the other company's "B Confidential Role".
 
 > **In plain words:** it's like a hotel where the key card machine asks you which room you want, and gives you that key without checking your booking. The guest list doesn't even record which room belongs to whom.
+
+**Status: fixed.**
+- **Test first:** [`login_tenant_isolation_spec.rb`](../api/spec/requests/auth/login_tenant_isolation_spec.rb) was committed while all 4 examples failed. The fix commit then made all 4 pass, with the checks unchanged.
+- **The fix:**
+  - Users now belong to one organization ([`AddOrganizationToUsers`](../api/db/migrate/20260929000000_add_organization_to_users.rb), [`user.rb`](../api/app/models/user.rb)).
+  - Login issues a token **only** for that organization. The `X-Tenant-Scheme` header is ignored, and the "first row" fallback is gone ([`authentication_controller.rb`](../api/app/controllers/api/v1/authentication_controller.rb)).
+  - A user with no organization can't log in.
+- **Assumption (the spec never defined this, see M2):** one user belongs to exactly one company. If users ever need several companies, this becomes a membership table, and the header can then choose *among the user's own* companies.
+
+**What remains after the fix (disclosed, not hidden):**
+- **Existing users must be assigned.** Every user who exists before this migration has no organization and **can't log in** until an operator sets one. I didn't auto-assign, because there's no safe way to guess. *Deploy step:* assign every user to their organization before releasing.
+- **Old tokens still work.** Tokens issued before the fix are still valid for up to 3 days, because the backend trusts token claims without looking up the user (F17). A token someone already obtained for another company keeps working until it expires. *Deploy step:* rotate `SECRET_KEY_BASE` on release to invalidate all old tokens.
+- **Scope of this fix.** It closes *how the wrong token gets issued*. It doesn't close F2: portfolios are still reachable by ID with a *correct* token.
 
 ---
 
@@ -422,7 +435,7 @@ These aren't bugs in the code. **Nobody defined them**, so nobody can say what "
 | # | What's missing | Why it matters |
 |---|----------------|----------------|
 | M1 | **No automated tests and no CI** | Nothing above would have been caught, and nothing stops it coming back. This is the biggest gap for this engagement, and Task 2 builds it. |
-| M2 | **No rule for which users belong to which company**, and no way to create users except the Rails console | This is the root cause of F1. |
+| M2 | **No rule for which users belong to which company**, and no way to create users except the Rails console | This is the root cause of F1. *Decided for the F1 fix: one user belongs to one company (assumption, see F1). User creation is still console-only.* |
 | M3 | **The spec and the code disagree on how an interview ends** | The specs say the AI closes on its own and invites the candidate's questions. The code forbids closing without a system signal and forbids asking questions ([`system_prompt_compiler.rb:108-129`](../api/app/services/assessments/system_prompt_compiler.rb#L108-L129)). One of them is out of date, and nobody can say which. |
 | M4 | **Rules that exist only in the code**: auto-cover after 4 probes, pacing levels, max 10 discovered skills | These rules decide when interviews end, but they aren't written down anywhere to review or test against. |
 | M5 | **No versioning when an assessment is edited after interviews happened** | Editing skills changes what past candidates are compared against. |

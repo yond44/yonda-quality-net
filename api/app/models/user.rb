@@ -3,6 +3,10 @@
 class User < ApplicationRecord
   has_secure_password
 
+  # The one tenant this user may act in (audit F1). Optional so unassigned
+  # legacy users can exist; login refuses them.
+  belongs_to :organization, optional: true
+
   ROLES = %w[admin user].freeze
 
   validates :email, presence: true,

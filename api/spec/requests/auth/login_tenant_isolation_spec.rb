@@ -11,13 +11,7 @@ RSpec.describe 'F1: login issues tokens only for the user\'s own tenant', type: 
   let!(:own_corp)   { create_org('own-corp') }
 
   let(:password) { 'password123' }
-  let!(:user) do
-    u = User.create!(email: 'assessor@own-corp.example', password:, role: 'admin')
-    # Users gain a company in the fix; before it the column doesn't exist, so the
-    # examples below run against the old behaviour and fail on their assertions.
-    u.update!(organization: own_corp) if u.has_attribute?(:organization_id)
-    u
-  end
+  let!(:user) { User.create!(email: 'assessor@own-corp.example', password:, role: 'admin', organization: own_corp) }
 
   it 'issues a token for the user\'s own company when no tenant header is sent (web login)' do
     login(user.email, password)
