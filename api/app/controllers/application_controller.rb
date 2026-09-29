@@ -54,6 +54,14 @@ class ApplicationController < ActionController::API
   def authenticate_with_roles!(roles)
     roles = roles.flatten.map(&:to_s)
     result = AuthorizeApiRequest.new(request.headers, roles).call
+
+    # The middleware picks the request's company from unverified input (token,
+    # X-Tenant-Scheme header or Referer). It must be the company the verified
+    # token was issued for, or a valid token opens any company (audit F23).
+    unless result[:user].scheme.present? && result[:user].scheme == current_organization&.scheme
+      raise(ExceptionHandler::InvalidToken, Message.invalid_token)
+    end
+
     Current.user = result[:user]
   end
 

@@ -6,7 +6,7 @@
 1. I read the code and compared it to the specs.
 2. I ran the whole app on my machine and **reproduced the main problems for real**. Each finding below says how to reproduce it.
 
-**Status:** F22, F1 and F2 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
+**Status:** F22, F1, F2 and F23 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
 
 ---
 
@@ -81,7 +81,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F22 | The backend cannot start in its production configuration | **P0** | built-wrong | LIVE + CI | **fixed** |
 | F1 | Login lets any user pick any company's workspace | **P1** | built-wrong | LIVE | **fixed** |
 | F2 | One company can read **and change** another company's candidate data | **P1** | built-wrong | LIVE | **fixed** |
-| F23 | A valid login from one company works inside **any other company** (found while fixing F2) | **P1** | built-wrong | TEST | open |
+| F23 | A valid login from one company works inside **any other company** (found while fixing F2) | **P1** | built-wrong | TEST | **fixed** |
 | F3 | Invite links lead candidates to a 404 page | **P1** | built-wrong | LIVE | open |
 | F4 | Removing a skill in an edit form doesn't remove it | **P1** | built-wrong | LIVE | open |
 | F5 | AI levels in an unexpected format are saved as **L1** | **P1** | built-wrong | LIVE | open |
@@ -211,6 +211,14 @@ This corrupts another company's hiring decisions.
 4. A `PUT` in the same form **renamed Company B's assessment**: 200 OK.
 
 > **In plain words:** the guard at the door reads your badge only if you hold it face-up. If you hold it upside down, the guard asks "which floor?" and believes your answer, while the turnstile still lets the badge through because it's a real badge.
+
+**Status: fixed.**
+- **Test first:** [`f23_token_company_mismatch_spec.rb`](../api/spec/requests/f23_token_company_mismatch_spec.rb) was committed and pushed while 3 of its 4 examples failed, and CI flagged it by itself. The fix commit made all 4 pass, with the checks unchanged. The 4th example is a control: the normal `Bearer` login still works.
+- **The fix:** one check at the single place every logged-in request passes through ([`application_controller.rb`](../api/app/controllers/application_controller.rb), `authenticate_with_roles!`). After the token's signature is verified, the company written inside it **must equal** the company the request is working in. Otherwise the request gets **401**. This closes every variant at once (any header form, the tenant header, the `Referer`), instead of patching each way in.
+- **Why there, and not in the middleware:** the middleware runs before the token is verified, so it can't trust what it reads. The login check is the first place that knows who the user really is.
+
+**What remains after the fix (disclosed, not hidden):**
+- The middleware still **guesses** the company from unverified input first. It's now harmless for logged-in requests, but the candidate endpoints (no login) still rely on it, and the other F17 items (dev-token fallback, users removed but still holding tokens) are still open.
 
 ### F3 — Invite links lead candidates to a 404 page · P1 · LIVE
 
