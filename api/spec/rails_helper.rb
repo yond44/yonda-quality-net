@@ -35,4 +35,7 @@ RSpec.configure do |config|
     example.run
     RequestStore.clear!
   end
+
+  # Start every example with an empty (fake) Sidekiq queue.
+  config.before { Sidekiq::Worker.clear_all }
 end
