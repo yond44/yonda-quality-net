@@ -16,7 +16,7 @@ Everything runs in GitHub Actions: [`.github/workflows/ci.yml`](../.github/workf
 | **Gate: Definition of Ready** *(pull requests only)* | No change merges without its inputs | M9 (tickets "done" with no change or test), and the brief's "ghost spec" problem |
 | **Gate: self-test** | The gate's own rules can't be silently weakened | A broken or loosened gate |
 | **Net: API boots in production mode** | The backend actually starts with production settings | **F22** (P0): production couldn't boot |
-| **Net: API tests (audit findings + critical paths)** | Data integrity and tenant isolation on the risk-carrying paths, plus the main journey | **F1–F8**, and any regression on the critical path |
+| **Net: API tests (audit findings + critical paths)** | Data integrity and tenant isolation on the risk-carrying paths, plus the main journey | **F1–F8, F23**, and any regression on the critical path |
 | **Net: web type-check and build** | The web app compiles and builds | Type errors and broken builds in the frontend |
 
 ### What the gate checks
@@ -43,6 +43,7 @@ One spec file per **class of risk**, not a coverage percentage:
 |---|---|---|
 | [`login_tenant_isolation_spec.rb`](../api/spec/requests/auth/login_tenant_isolation_spec.rb) | **F1** login gives a token for the wrong company | A token is only ever issued for the user's own company |
 | [`f2_cross_tenant_portfolio_spec.rb`](../api/spec/requests/f2_cross_tenant_portfolio_spec.rb) | **F2** one company reads or **changes** another's data | Company A gets 404 on company B's records, and nothing is read or changed |
+| [`f23_token_company_mismatch_spec.rb`](../api/spec/requests/f23_token_company_mismatch_spec.rb) | **F23** a valid token opens another company | A token is rejected (401) in any company except the one it was issued for, whatever form the header takes |
 | [`f3_invite_url_spec.rb`](../api/spec/models/f3_invite_url_spec.rb) | **F3** invite link leads to a 404 | The link uses the web app's address, on a route `web/src/App.tsx` really serves |
 | [`f4_removed_skills_spec.rb`](../api/spec/requests/f4_removed_skills_spec.rb) | **F4** "removed" skills stay | The exact payload the edit page sends really removes the skill |
 | [`f5_level_parsing_spec.rb`](../api/spec/services/f5_level_parsing_spec.rb) | **F5** unreadable AI level stored as L1 | `"L3"` becomes 3, and a missing level fails loudly |
@@ -131,7 +132,8 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 |---|---|---|---|
 | **F22** production can't boot | [36547094896](https://github.com/yond44/yonda-quality-net/actions/runs/36547094896): *the CI found it by itself on its first run* | [36548570736](https://github.com/yond44/yonda-quality-net/actions/runs/36548570736) | Removed Active Job config for a framework never loaded; the autoloader no longer also manages boot-time WebSocket middleware |
 | **F1** login picks any company | [36548723182](https://github.com/yond44/yonda-quality-net/actions/runs/36548723182): 4/4 failing | [36549163695](https://github.com/yond44/yonda-quality-net/actions/runs/36549163695) | Users belong to one organization, and the token scheme comes only from it |
-| **F2** one company reads or changes another's data | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 4/5 failing | the `fix(F2)` commit's run | Portfolios and portfolio skills are looked up through the caller's company (via their session), never by bare ID |
+| **F2** one company reads or changes another's data | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 4/5 failing | [36555110517](https://github.com/yond44/yonda-quality-net/actions/runs/36555110517) (F2 no longer flagged) | Portfolios and portfolio skills are looked up through the caller's company (via their session), never by bare ID |
+| **F23** a valid token opens another company *(new finding, found while fixing F2)* | [36555404757](https://github.com/yond44/yonda-quality-net/actions/runs/36555404757): 3/4 failing | [36555539895](https://github.com/yond44/yonda-quality-net/actions/runs/36555539895) (F23 no longer flagged) | The verified token's company must equal the request's company, checked once where every logged-in request passes |
 | **F3–F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 13 failing, 0 errors | *Task 3* | *Task 3* |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
