@@ -30,7 +30,11 @@ The riskiest parts are:
 
 ## Summary (5-minute read)
 
-**Do not ship this to a client.** There are three groups of problems:
+**Do not ship this to a client.** First, the most basic problem:
+
+0. **As configured, the backend can't even start in production** (F22, P0). Development never loads the code the way production does, so nobody noticed. The new CI caught it on its very first run.
+
+Beyond that, there are three groups of problems:
 
 1. **Customers are not separated from each other.**
    - Any assessor can log into *another company's* workspace just by adding one header to the login request (F1).
@@ -72,6 +76,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 
 | # | Problem | Sev | Type | Evidence | Status |
 |---|---------|-----|------|----------|--------|
+| F22 | The backend cannot start in its production configuration | **P0** | built-wrong | LIVE + CI | open |
 | F1 | Login lets any user pick any company's workspace | **P1** | built-wrong | LIVE | open |
 | F2 | One company can read **and change** another company's candidate data | **P1** | built-wrong | LIVE | open |
 | F3 | Invite links lead candidates to a 404 page | **P1** | built-wrong | LIVE | open |
@@ -97,6 +102,25 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 ---
 
 ## Findings in detail
+
+### F22 — The backend cannot start in its production configuration · P0 · LIVE + CI
+
+**Impact:** with the production settings from the deployment files (`RAILS_ENV=production`), the API **crashes at boot**. Nothing works at all: no login, no interviews, no results. There is no workaround short of changing the code. This finding was added after the first two passes of the audit, which is why it has the highest number.
+
+**What goes wrong** (two separate causes, and either one alone is enough to crash):
+1. [`production.rb:34`](../api/config/environments/production.rb#L34) configures Active Job (`config.active_job.queue_adapter = :sidekiq`), but the app never loads the Active Job framework: [`application.rb`](../api/config/application.rb#L5-L8) only loads Model, Record and Controller. Result: `undefined method 'active_job'`. The app uses Sidekiq workers directly, so the line configures something that isn't there.
+2. Production loads every file at boot. Rails expects each file name to match the class inside it, but `app/channels/audio_websocket_middleware.rb` defines `AudioWebSocketMiddleware` (capital **S**; the file name implies `AudioWebsocketMiddleware`), and the same goes for the coverage middleware. Development loads these files a different way ([`websocket.rb`](../api/config/initializers/websocket.rb)), so it never notices.
+
+**Why nobody noticed:** development loads code lazily and never runs `production.rb`. So the only environment where this code runs this way is production itself.
+
+**How I found and reproduced it:**
+- `bundle exec rails zeitwerk:check`, Rails' own loader check, fails with "expected file … to define constant AudioWebsocketMiddleware".
+- `RAILS_ENV=production rails runner 'puts :ok'` crashes with `undefined method 'active_job'`.
+- **The CI caught it by itself on its first run:** the check "Net: API boots in production mode" went red ([run 36547094896](https://github.com/yond44/yonda-quality-net/actions/runs/36547094896)).
+
+> **In plain words:** the car starts fine in the garage (development), but the "drive on the road" setting (production) points at an engine part that was never installed.
+
+---
 
 ### F1 — Login lets any user pick any company's workspace · P1 · LIVE
 
@@ -428,11 +452,13 @@ These aren't bugs in the code. **Nobody defined them**, so nobody can say what "
 ## Ship or don't ship
 
 **Don't ship.** Each of these blocks the release on its own:
+- **F22:** the backend can't start in production at all.
 - **F1 and F2:** customers' data isn't separated, and one customer can change another's hiring results.
 - **F3:** candidates can't open their interview link.
 - **F4, F5, F6:** hiring results can be silently wrong while the screen says everything is fine.
 
 **What I would require before any client sees it:**
+0. **The backend boots in production mode**, checked by CI on every change (F22).
 1. **Company separation.** Users belong to a company, and every record is loaded through its company. Tests prove Company A gets **404** on Company B's data, for both reading and changing.
 2. **Invite links.** They use the website address, with a test that the link opens the interview page.
 3. **Silent data errors.**
