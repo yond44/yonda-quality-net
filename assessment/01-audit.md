@@ -41,7 +41,9 @@ Beyond that, there are three groups of problems:
    - Even without that trick, any assessor can read *and change* another company's candidate ratings by guessing an ID number (F2).
    - I proved both on the running app: from Company A's account, I downloaded Company B's confidential candidate report, then changed that candidate's rating from L4 to L1.
    - A normal Company A login also works **inside Company B**, if it's sent in a slightly different form with Company B's name in a header (F23). Found while fixing F2.
-2. **Candidates can't start their interview.** The invite link points to the backend server instead of the website, so the candidate sees a "404 Not Found" page (F3).
+2. **Candidates can't start their interview.**
+   - The invite link points to the backend server instead of the website, so the candidate sees a "404 Not Found" page (F3).
+   - The internet check before the interview demands about 15 times the upload speed the interview uses, and measures it against free servers abroad. A candidate with a good connection can be blocked, with no way around it (F24).
 3. **Hiring results can be silently wrong, while the screen says everything worked.**
    - Removing a skill in the edit form doesn't actually remove it (F4).
    - If the AI answers in a format the code doesn't expect, the skill is saved as the lowest level, L1 (F5).
@@ -87,6 +89,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F5 | AI levels in an unexpected format are saved as **L1** | **P1** | built-wrong | LIVE | open |
 | F6 | Anyone with the invite link can end the interview as "all covered" | **P1** | built-wrong | LIVE | open |
 | F7 | Candidate-vs-vacancy comparison depends on the AI repeating skill names exactly | **P1** | built-wrong | CODE | open |
+| F24 | The pre-interview internet check blocks candidates whose connection is good enough (found in manual testing) | **P1** | built-wrong | LIVE | open |
 | F8 | "Required" column in the fit/gap table is always empty | P2 | built-wrong | LIVE | open |
 | F9 | Delete says "deleted" but nothing is deleted | P2 | built-wrong | LIVE | open |
 | F10 | The AI decides "confidence", although the spec gives a fixed rule | P2 | built-wrong | CODE | open |
@@ -326,6 +329,40 @@ The frontend's own data types describe levels as `"L1"`–`"L5"` text ([`types/i
 
 ---
 
+### F24 — The pre-interview internet check blocks candidates whose connection is good enough · P1 · LIVE
+
+*Found during manual testing of the candidate flow, after the F3 fix made the invite link work.*
+
+**Impact:** before the interview starts, the candidate's page checks their browser, internet, microphone and speakers. The **Start** button stays disabled until every check passes ([`HardwareCheck.tsx:284`](../web/src/components/HardwareCheck.tsx#L284)). A candidate whose connection easily carries the interview can be **blocked from starting it**, and nothing on the page lets them continue. The result depends on free third-party servers in another country, not on whether the candidate can actually do the interview.
+
+**Why P1, not P0 or P2:** most candidates pass, and a blocked candidate can get through by switching to a network with faster upload (a manual workaround), so it's not P0. It's not P2, because the pass/fail decision is based on the wrong measurement and on invented fallback numbers, so the result is wrong underneath.
+
+**What goes wrong:**
+- **The limits are far above what the interview uses.** The check requires download ≥ 8 Mbps and upload ≥ 4 Mbps ([`internetSpeedTest.ts:19-23`](../web/src/utils/internetSpeedTest.ts#L19-L23)). The interview only sends the candidate's **voice**: 16 kHz, 16-bit mono audio, about **0.26 Mbps** ([`useAudioCapture.ts:22`](../web/src/hooks/useAudioCapture.ts#L22), sent as raw binary by [`useAudioWebSocket.ts:137`](../web/src/hooks/useAudioWebSocket.ts#L137)). It receives the AI's voice at 24 kHz, about **0.4 Mbps** ([`useAudioPlayback.ts:3`](../web/src/hooks/useAudioPlayback.ts#L3)). No video is sent, and the camera is off by default ([`HardwareCheck.tsx:35`](../web/src/components/HardwareCheck.tsx#L35)). So the check demands about **15 times** the upload and **20 times** the download the interview needs.
+- **Upload is measured against the wrong servers.** It sends 0.5 MB to public echo services (`httpbin.org`, `postman-echo.com`), which send the data back. The timer also counts their processing and reply ([`internetSpeedTest.ts:90-100`](../web/src/utils/internetSpeedTest.ts#L90-L100)).
+- **The measurements compete with each other.** Download, upload and ping all run at the same time on the same connection ([`internetSpeedTest.ts:133-137`](../web/src/utils/internetSpeedTest.ts#L133-L137)).
+- **The right tool exists but isn't used.** The backend has its own endpoint for this (`POST /api/v1/speed_test`, [`routes.rb:14-17`](../api/config/routes.rb#L14-L17)), but the setting that points the check at it (`VITE_SPEED_TEST_UPLOAD_URL`) is empty in `.env.example`.
+- **Invented numbers when a measurement fails.**
+  - If every upload server fails, the code returns a made-up 0.5 MB/s, which is **exactly 4 Mbps**, so the check **passes** ([`internetSpeedTest.ts:105`](../web/src/utils/internetSpeedTest.ts#L105)).
+  - If the download fails, it guesses a speed from how long a tiny icon took to load ([`:74-82`](../web/src/utils/internetSpeedTest.ts#L74-L82)).
+  - A server that quickly answers with an error page is counted as a fast upload, because `fetch` doesn't treat HTTP errors as failures.
+
+**How I reproduced it** (on the running app, as the candidate):
+1. Open a working invite link. The pre-interview check runs.
+2. The result: **download 129.03 Mbps, upload 2.96 Mbps, ping 22 ms, "Internet: Failed"**. The Start button stays disabled.
+3. 2.96 Mbps is about **11 times** the upload the interview needs, but it's below the 4 Mbps limit.
+4. **Local workaround:** with `VITE_SPEED_TEST_UPLOAD_URL` pointed at the backend's own `/api/v1/speed_test`, the upload is measured on the path the interview audio really takes.
+
+> **In plain words:** it's like refusing to let someone make a phone call unless their line could stream 4K video, and measuring the line by mailing a parcel to a warehouse abroad and waiting for it to come back.
+
+**Planned fix (after F4–F8):**
+- Limits derived from the audio format, with a safety margin, written down as an assumption (see M10).
+- Measure against our own backend, one measurement at a time.
+- No invented numbers: a measurement that fails means "couldn't check", with a retry, never an automatic pass or fail.
+- A web unit test for the decision logic, since the gate requires a test for any `web/src` change.
+
+---
+
 ### F8 — "Required" column in the fit/gap table is always empty · P2 · LIVE
 
 **Impact:**
@@ -488,10 +525,11 @@ These aren't bugs in the code. **Nobody defined them**, so nobody can say what "
 | M3 | **The spec and the code disagree on how an interview ends** | The specs say the AI closes on its own and invites the candidate's questions. The code forbids closing without a system signal and forbids asking questions ([`system_prompt_compiler.rb:108-129`](../api/app/services/assessments/system_prompt_compiler.rb#L108-L129)). One of them is out of date, and nobody can say which. |
 | M4 | **Rules that exist only in the code**: auto-cover after 4 probes, pacing levels, max 10 discovered skills | These rules decide when interviews end, but they aren't written down anywhere to review or test against. |
 | M5 | **No versioning when an assessment is edited after interviews happened** | Editing skills changes what past candidates are compared against. |
-| M6 | **No website address in the config** | Only the backend address exists, which leads directly to F3. |
+| M6 | **No website address in the config** | Only the backend address exists, which leads directly to F3. **Addressed by the F3 fix:** a `WEB_BASE_URL` setting now exists, and production won't start without it. |
 | M7 | **No rule for keeping hiring evidence** | Deleting a vacancy also deletes every fit/gap report made against it ([`vacancy.rb:7`](../api/app/models/vacancy.rb#L7)). |
 | M8 | **The public repo names the original company** | The imported code mentions it **50 times in 26 files**, plus internal cloud project, server and domain names (in `api/k8s/*`, `web/vercel.json`, READMEs and comments). That's an information leak, and it goes against the brief's "don't name the company" rule. **Fixed:** every identifier was replaced across **all of the history** (not only the latest commit), so no old commit still contains one. |
 | M9 | **No rule that a ticket needs a linked change and a test before it's closed** | In the source tracker, ticket #1 was closed as "completed" with no code change, and ticket #2 was closed while the bug still exists. So the tracker says "done" while the code says otherwise. This is exactly what the Definition-of-Done gate in Task 2 must prevent. |
+| M10 | **No defined minimum connection for the interview** | The pre-interview check blocks candidates below 8 Mbps download and 4 Mbps upload. No spec gives these numbers, and they don't match what the interview uses (F24). It's also undefined what should happen when the check **can't measure** at all: block the candidate, warn them, or let them through. Nobody can test F24's fix against a rule that doesn't exist. |
 
 ---
 
@@ -516,13 +554,13 @@ These aren't bugs in the code. **Nobody defined them**, so nobody can say what "
 **Don't ship.** Each of these blocks the release on its own:
 - **F22:** the backend can't start in production at all.
 - **F1, F2 and F23:** customers' data isn't separated, and one customer can change another's hiring results.
-- **F3:** candidates can't open their interview link.
+- **F3 and F24:** candidates can't open their interview link, and some can't get past the internet check.
 - **F4, F5, F6:** hiring results can be silently wrong while the screen says everything is fine.
 
 **What I would require before any client sees it:**
 0. **The backend boots in production mode**, checked by CI on every change (F22).
 1. **Company separation.** Users belong to a company, and every record is loaded through its company. Tests prove Company A gets **404** on Company B's data, for both reading and changing.
-2. **Invite links.** They use the website address, with a test that the link opens the interview page.
+2. **Invite links and the pre-interview check.** Links use the website address, with a test that the link opens the interview page. The internet check measures against our own backend, with limits based on what the interview really uses.
 3. **Silent data errors.**
    - Edit forms send `_destroy` for removed skills.
    - AI output is checked strictly, so a bad level **fails** instead of becoming L1.
@@ -567,6 +605,7 @@ The first version of this file covered only part of the code. Here's where each 
 | F5: `ai_level` type mismatch (number vs `"L3"`) | **F18**, and **F5** | Split in two. The display issue stays P3 (F18). The bigger risk it pointed to, that `"L3"` is saved as L1, is now the separate **P1 F5**, reproduced live. |
 | "What worries me" notes (unverified token, race conditions, trusting AI output) | **F17, F11, F5/F10** | Each became its own finding with evidence |
 | — | **F1, F3, F4, F6, F7, F9, F12–F14, F16, F19, F20, M2–M8** | New in the full sweep |
+| — | **F24, M10** | Found during manual testing of the candidate flow, after the F3 fix made the invite link work |
 | F17 bullet "company chosen from unchecked data" | **F23** (P1) | Found while fixing F2: exploiting it gave full read and write access to another company. Re-ranked from P2 to P1. |
 
 ---

@@ -68,7 +68,7 @@ Knowing the gaps is part of the system. These are known and accepted for now:
 |---|---|---|
 | **Real AI behaviour** (question quality, probing, rating accuracy) | Tests use fake models, so they're deterministic and free | The AI could interview badly and no check would notice. That needs a separate evaluation set against the spec, not unit tests. |
 | **The live voice interview** (WebSocket audio, reconnects, timing) | Needs a real browser, audio and Gemini Live | Races **F11** (coverage updates) and **F12** (lost transcript lines) are untested |
-| **Frontend behaviour** | No UI test framework yet; the web job only type-checks and builds | **F21** (error states) and the web side of F4 are untested. The build passes even if a page shows wrong data. |
+| **Frontend behaviour** | No UI test framework yet; the web job only type-checks and builds | **F21** (error states), **F24** (the pre-interview internet check) and the web side of F4 are untested. The build passes even if a page shows wrong data. |
 | **P2/P3 findings** other than F8 | Time goes to P0/P1 first, as the brief allows | F9–F21 have no checks yet (listed as open in the audit) |
 | **Production configuration beyond boot** | The boot check uses dummy secrets | **F16**: the real deployment files still lack secrets and pin `:latest` images |
 | **Quality of a PR's inputs** | The gate checks the inputs **exist and have the right shape**, not whether they're **good** | A vague spec or a weak test can still pass. Human review is still needed. The gate removes "forgot the spec", not bad judgment. |
