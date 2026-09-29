@@ -142,6 +142,166 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
 
+---
+
+## Fix notes: what each fix changed, and why
+
+One entry per fix, in the order they were fixed. Each says what was red, the root cause, every file changed (with links), the code before → after, why it was fixed this way, and the green run. Snippets are shortened to the lines that matter.
+
+### F22: the backend couldn't start in production (P0)
+
+- **Red:** [36547094896](https://github.com/yond44/yonda-quality-net/actions/runs/36547094896), the CI's very first run. "API boots in production mode" crashed with `undefined method 'active_job'`.
+- **Root cause:** two problems that only appear when production loads the app.
+  1. The production settings configured **Active Job**, a Rails feature this app never loads (it uses Sidekiq workers directly).
+  2. Production loads every file at startup and checks that each file name matches its class name. The WebSocket files, like `audio_websocket_middleware.rb`, hold classes spelled `AudioWebSocketMiddleware` (capital S), so the check failed.
+
+  Development loads files only when they're used, so neither problem ever showed up there.
+- **Files changed:**
+  - [`production.rb:37-39`](../api/config/environments/production.rb#L37-L39)
+  - [`application.rb:32-36`](../api/config/application.rb#L32-L36)
+- **Before → after:**
+  ```ruby
+  # production.rb — BEFORE
+  config.active_job.queue_adapter = :sidekiq
+  # AFTER: removed, with a comment saying the app doesn't load Active Job
+
+  # application.rb — BEFORE: app/channels was in the autoload list
+  #{config.root}/app/channels
+  # AFTER: the autoloader ignores that folder
+  Rails.autoloaders.main.ignore(config.root.join('app/channels'))
+  ```
+- **Why this way:** those files are already loaded by hand at boot ([`websocket.rb:11-12`](../api/config/initializers/websocket.rb#L11-L12)), so the autoloader was managing them a second time. Renaming the classes instead would have touched the live-interview code, which the net can't test.
+- **Green:** [36548570736](https://github.com/yond44/yonda-quality-net/actions/runs/36548570736).
+
+### F1: login let any user pick any company (P1)
+
+- **Red:** [36548723182](https://github.com/yond44/yonda-quality-net/actions/runs/36548723182), 4/4 failing.
+- **Root cause:** users had no company. Login took the company from a header the client sends (`X-Tenant-Scheme`), or else from "the first row" of the organizations table.
+- **Files changed:**
+  - **Added:** [`20260929000000_add_organization_to_users.rb`](../api/db/migrate/20260929000000_add_organization_to_users.rb), which adds the `users.organization_id` column
+  - [`user.rb:8`](../api/app/models/user.rb#L8)
+  - [`authentication_controller.rb:16-21`](../api/app/controllers/api/v1/authentication_controller.rb#L16-L21)
+  - [`schema.rb`](../api/db/schema.rb), regenerated
+- **Before → after:**
+  ```ruby
+  # BEFORE: the company comes from the client, or "whatever row is first"
+  scheme = request.headers['X-Tenant-Scheme'].presence ||
+           ActiveRecord::Base.connection.select_value('SELECT scheme FROM organizations LIMIT 1') || 'test-corp'
+  token  = JsonWebToken.encode({ user_id: user.id, role: user.role, scheme: })
+
+  # AFTER: the company comes only from the user's own record
+  organization = user.organization
+  return json_error('Account is not assigned to an organization', :unauthorized) unless organization
+  token = JsonWebToken.encode({ user_id: user.id, role: user.role, scheme: organization.scheme })
+  ```
+- **Why this way:**
+  - **Why not just `user_id`?** The token already had the user's ID. What was missing was the link between a person and their company. All data is labelled by company (`tenant_id`), not by person. Filtering by user would stop colleagues from seeing each other's assessments, which is a redesign, not a fix.
+  - **Why no foreign key?** `organizations` lives in the `public` schema and is owned by the upstream platform. The existing `tenant_id` columns follow the same convention.
+  - **Assumption:** one user belongs to one company (audit M2).
+- **Green:** [36549163695](https://github.com/yond44/yonda-quality-net/actions/runs/36549163695).
+
+### F2: one company could read and change another's candidate reports (P1)
+
+- **Red:** [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611), 4/5 failing.
+- **Root cause:** portfolios and portfolio skills have no `tenant_id` column, so the automatic company filter (`TenantScoped`) never applied to them. The controllers loaded them by ID number alone.
+- **Files changed:**
+  - [`portfolio.rb:18`](../api/app/models/portfolio.rb#L18)
+  - [`portfolio_skill.rb:15`](../api/app/models/portfolio_skill.rb#L15)
+  - [`portfolios_controller.rb:146-148`](../api/app/controllers/api/v1/portfolios_controller.rb#L146-L148): the new finder, used at [`:82`](../api/app/controllers/api/v1/portfolios_controller.rb#L82), [`:104`](../api/app/controllers/api/v1/portfolios_controller.rb#L104), [`:130`](../api/app/controllers/api/v1/portfolios_controller.rb#L130) and [`:162`](../api/app/controllers/api/v1/portfolios_controller.rb#L162)
+  - [`portfolio_skills_controller.rb:51`](../api/app/controllers/api/v1/portfolio_skills_controller.rb#L51)
+- **Before → after:**
+  ```ruby
+  # BEFORE: any company, any ID
+  portfolio        = Portfolio.find(params[:id])
+  @portfolio_skill = PortfolioSkill.joins(:portfolio).find(params[:id])
+
+  # AFTER: only records whose interview belongs to the caller's company
+  scope :for_tenant, ->(tenant_id) { where(session_id: Session.unscoped.where(tenant_id:).select(:id)) }
+  portfolio        = Portfolio.for_tenant(current_tenant_id).find(params[:id])
+  @portfolio_skill = PortfolioSkill.for_tenant(current_tenant_id).find(params[:id])
+  ```
+  In JavaScript terms: `Portfolio.findOne({ id, sessionId: { in: sessionIdsOf(myCompany) } })`. Another company's record now answers 404, as if it didn't exist.
+- **Why this way, not a `tenant_id` column:** a column would need a data backfill. It would also change how the background jobs and the live-interview WebSocket (which the net can't test) create these records. The scoped lookup closes the hole with a small, tested change. The column is recorded in the audit as the better long-term design.
+- **Green:** [36555110517](https://github.com/yond44/yonda-quality-net/actions/runs/36555110517).
+
+### F23: a valid login from one company worked inside any other company (P1, found while fixing F2)
+
+- **Red:** [36555404757](https://github.com/yond44/yonda-quality-net/actions/runs/36555404757), 3/4 failing.
+- **Root cause:** the request's company is picked by the tenant middleware from **unverified** input, and it only reads the token if the header starts with `Bearer `. The login check accepts the token in any form. Nothing compared the two, so `Authorization: Token <A's token>` plus `X-Tenant-Scheme: company-b` let a company A user work inside company B.
+- **Files changed:**
+  - [`application_controller.rb:54-66`](../api/app/controllers/application_controller.rb#L54-L66)
+- **Before → after:**
+  ```ruby
+  # BEFORE: the token is checked, but not which company it belongs to
+  result = AuthorizeApiRequest.new(request.headers, roles).call
+  Current.user = result[:user]
+
+  # AFTER: the token's company must be the request's company
+  result = AuthorizeApiRequest.new(request.headers, roles).call
+  unless result[:user].scheme.present? && result[:user].scheme == current_organization&.scheme
+    raise(ExceptionHandler::InvalidToken, Message.invalid_token)   # → 401
+  end
+  Current.user = result[:user]
+  ```
+- **Why this way:** this is the one place every logged-in request passes, and the first place that knows the **verified** user. A single check closes every variant at once (any header form, the tenant header, the `Referer`), instead of patching each way in. The middleware can't do this check, because it runs before the token is verified.
+- **Green:** [36555539895](https://github.com/yond44/yonda-quality-net/actions/runs/36555539895).
+
+### F3: invite links sent candidates to a 404 page (P1)
+
+- **Red:** [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611), 1/2 failing.
+- **Root cause:** the link used `APP_BASE_URL`, the backend's address, but `/interview/:token` is a page of the **web app**.
+- **Files changed:**
+  - [`session.rb:28-33`](../api/app/models/session.rb#L28-L33)
+  - [`production.rb:25-27`](../api/config/environments/production.rb#L25-L27)
+  - The setting renamed in [`application.yml.sample:21`](../api/config/application.yml.sample#L21), [`README.md:30`](../api/README.md#L30), [`configmap.yaml:20`](../api/k8s/configmap.yaml#L20), and [`ci.yml:57`](../.github/workflows/ci.yml#L57) / [`:93`](../.github/workflows/ci.yml#L93)
+- **Before → after:**
+  ```ruby
+  # BEFORE: the backend's address
+  base = ENV.fetch('APP_BASE_URL', 'http://localhost:3001')
+  # AFTER: the web app's address
+  base = ENV.fetch('WEB_BASE_URL', 'http://localhost:5173').chomp('/')
+
+  # production.rb — NEW: refuse to start without it
+  raise "WEB_BASE_URL must be set in production (the web app's public address)" if ENV["WEB_BASE_URL"].blank?
+  ```
+- **Why this way:**
+  - **A new setting, not a new value for `APP_BASE_URL`:** that setting was documented as the backend's address. Reusing a setting for a different meaning is how F3 happened in the first place.
+  - **Refusing to start:** otherwise a missing setting would silently send every candidate to `localhost`, the same failure in a new form.
+- **Green:** [36557839764](https://github.com/yond44/yonda-quality-net/actions/runs/36557839764).
+
+### F24: the internet check blocked candidates with good connections (P1, found in manual testing)
+
+- **Red:** [36563351392](https://github.com/yond44/yonda-quality-net/actions/runs/36563351392), 5/6 web tests failing.
+- **Root cause:** the check wasn't tied to what it protects.
+  - Its limits were 15–20 times what the voice interview uses.
+  - Upload was timed against public echo servers abroad.
+  - All measurements ran at the same time, competing for the connection.
+  - A failed measurement turned into an invented number that could pass or fail a candidate.
+- **Files changed:**
+  - **Added:** [`internetSpeedTest.test.ts`](../web/src/utils/internetSpeedTest.test.ts), the web app's first test (Vitest)
+  - [`internetSpeedTest.ts`](../web/src/utils/internetSpeedTest.ts), rewritten. The key parts: limits [`:30-34`](../web/src/utils/internetSpeedTest.ts#L30-L34), targets [`:38-39`](../web/src/utils/internetSpeedTest.ts#L38-L39), upload [`:79-90`](../web/src/utils/internetSpeedTest.ts#L79-L90), order and pass rule [`:111-127`](../web/src/utils/internetSpeedTest.ts#L111-L127)
+  - [`HardwareCheck.tsx:243-247`](../web/src/components/HardwareCheck.tsx#L243-L247): the "couldn't measure" message
+  - [`package.json:10`](../web/package.json#L10) (`npm test`) and [`ci.yml:124-128`](../.github/workflows/ci.yml#L124-L128) (CI runs the web tests)
+- **Before → after:**
+  ```ts
+  // Limits — BEFORE: 8 Mbps down / 4 Mbps up.  AFTER: 1.5 / 1 (voice ≈ 0.38 down / 0.26 up, ×4 headroom)
+
+  // Upload target
+  // BEFORE: "https://httpbin.org/post", "https://postman-echo.com/post"
+  // AFTER:  `${API_BASE_URL}/speed_test`  (our own backend, where the interview audio goes)
+
+  // Order
+  // BEFORE: await Promise.all([download(), upload(), ping()])
+  // AFTER:  ping, then download, then upload, one at a time
+
+  // Failures
+  // BEFORE: return 0.5;   // invented: exactly 4 Mbps, so it PASSES
+  // AFTER:  return res.ok ? toMbps(bytes, ms) : null;   // null = "couldn't measure"
+  const passed = measured && download >= min && upload >= min && ping <= max;
+  ```
+- **Why this way:** the check should answer one question: *can this connection carry the interview?* So it measures the interview's own path, with limits taken from the interview's own audio format. The limits are an assumption, because no spec defines them (audit M10).
+- **Green:** [36563510380](https://github.com/yond44/yonda-quality-net/actions/runs/36563510380).
+
 ## Assumptions
 
 - **Spec links** may point to a URL, an issue, or a file in this repo. Audit findings (`assessment/01-audit.md#…`) count as specs for defect fixes, because each has an impact, repro steps and the expected behaviour.
