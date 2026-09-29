@@ -139,7 +139,8 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 | **F3** invite link opens a 404 | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 1/2 failing | [36557839764](https://github.com/yond44/yonda-quality-net/actions/runs/36557839764) (F3 no longer flagged) | Invite links use a new `WEB_BASE_URL` (the web app), and production refuses to boot without it |
 | **F24** internet check blocks good connections *(found in manual testing)* | [36563351392](https://github.com/yond44/yonda-quality-net/actions/runs/36563351392): 5/6 failing (web tests) | [36563510380](https://github.com/yond44/yonda-quality-net/actions/runs/36563510380) (web check green) | Limits derived from the voice audio; upload and ping measured on our own backend, one at a time; a failed measurement is "couldn't measure", never an invented number |
 | **F4** removed skills stay in the database | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/2 failing | [36565150346](https://github.com/yond44/yonda-quality-net/actions/runs/36565150346) (F4 no longer flagged) | The edit endpoints treat the sent list as complete: skills left out of it are deleted in the same save |
-| **F5–F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 10 failing, 0 errors | *Task 3* | *Task 3* |
+| **F5** an unreadable AI level is saved as L1 | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/3 failing; the new regeneration check: the `test(F5)` commit's run | the `fix(F5)` commit's run | The level is read strictly (3, "3", "L3") or generation fails loudly; all skills are checked first, then saved in one transaction |
+| **F6–F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 8 failing, 0 errors | *Task 3* | *Task 3* |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
 
@@ -332,6 +333,45 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - **Reusing Rails' own `_destroy` marker** means the deletions happen inside Rails' normal save, in one transaction. A rejected save deletes nothing, and one of the new controls proves it.
   - **Only when a list is sent.** An edit that only renames the assessment keeps every skill; the other new control proves that.
 - **Green:** [36565150346](https://github.com/yond44/yonda-quality-net/actions/runs/36565150346).
+
+### F5: an AI level the code couldn't read was saved as L1 (P1)
+
+- **Red:** [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611), 2/3 failing. The new regeneration check failed on its own in the `test(F5)` commit's run.
+- **Root cause:** the level was saved with `skill_data['level'].to_i.clamp(1, 5)`. In Ruby, `"L3".to_i` and `nil.to_i` are both `0`, and clamping 0 into 1–5 gives **1**. The portfolio was then marked complete, so a candidate who was really L3 showed as L1, and fit/gap reported a fake gap. Separately, the old skills were deleted **before** the new ones were saved one by one, so a bad answer part-way through left a half-saved portfolio.
+- **Files changed:**
+  - [`generator.rb:8-10`](../api/app/services/portfolios/generator.rb#L8-L10): the error class and the accepted text form
+  - [`generator.rb:154-193`](../api/app/services/portfolios/generator.rb#L154-L193): `save_skills`, the new `skill_row` and `parse_level`
+  - [`f5_level_parsing_spec.rb:39-52`](../api/spec/services/f5_level_parsing_spec.rb#L39-L52): the new regeneration check, pushed before the fix
+- **Before → after:**
+  ```ruby
+  # BEFORE: unreadable becomes L1, too high is silently capped at L5
+  ai_level: skill_data['level'].to_i.clamp(1, 5),
+  # ...and the old skills are deleted first, then new ones are saved one by one
+  portfolio.portfolio_skills.destroy_all
+  (data['configured_skills'] || []).each { |s| portfolio.portfolio_skills.create!(...) }
+
+  # AFTER: read strictly, or stop with a clear reason
+  level = case raw
+          when Integer then raw
+          when Float   then raw.to_i if raw == raw.floor
+          when String  then raw[LEVEL_TEXT, 1]&.to_i     # "3", "L3"
+          end
+  return level if level&.between?(1, 5)
+  raise UnreadableLevel, "Unreadable level for '#{skill_data['skill_label']}': #{raw.inspect}"
+
+  # ...and everything is checked first, then replaced in one transaction
+  rows = configured.map { ... skill_row ... } + discovered.map { ... skill_row ... }
+  PortfolioSkill.transaction do
+    portfolio.portfolio_skills.destroy_all
+    rows.each { |row| portfolio.portfolio_skills.create!(row) }
+  end
+  ```
+  In JavaScript terms, the old line was `Math.min(5, Math.max(1, parseInt(level) || 0))`. The new one is "match `^L?[1-5]$`, or throw".
+- **Why this way:**
+  - **Fail, don't guess.** A wrong grade on a real candidate is worse than a visible failure. The job retries automatically, and the recruiter can press Regenerate.
+  - **Accept `"L3"`:** it's unambiguous, and the website's own types describe levels that way, so rejecting it would cause needless failures.
+  - **Check first, then save in one transaction:** a regeneration must never destroy a good earlier result on its way to failing.
+- **Green:** the `fix(F5)` commit's run.
 
 ## Assumptions
 

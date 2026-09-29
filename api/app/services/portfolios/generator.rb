@@ -5,6 +5,10 @@ module Portfolios
   # and final coverage map using Gemini Pro.
   # Runs post-session as a background job.
   class Generator
+    class UnreadableLevel < StandardError; end
+
+    LEVEL_TEXT = /\A\s*L?\s*([1-5])\s*\z/i # "3", "L3", "l 3"
+
     def initialize(session:, gemini_client: nil)
       @session = session
       @gemini_client = gemini_client || Gemini::HttpClient.new(
@@ -150,32 +154,42 @@ module Portfolios
     def save_skills(portfolio, response)
       data = response.is_a?(Hash) ? response : JSON.parse(response)
 
-      # Destroy existing skills (idempotent regeneration)
-      portfolio.portfolio_skills.destroy_all
+      # Read and check every skill before touching the saved ones, then replace them in
+      # one transaction: a bad answer never leaves a half-saved portfolio (audit F5).
+      rows = (data['configured_skills'] || []).map { |skill_data| skill_row(skill_data, discovered: false) } +
+             (data['discovered_skills'] || []).map { |skill_data| skill_row(skill_data, discovered: true) }
 
-      (data['configured_skills'] || []).each do |skill_data|
-        portfolio.portfolio_skills.create!(
-          skill_id:           skill_data['skill_id'],
-          skill_label:        skill_data['skill_label'],
-          is_discovered:      false,
-          ai_level:           skill_data['level'].to_i.clamp(1, 5),
-          ai_confidence:      skill_data['confidence'],
-          evidence:           Array(skill_data['evidence']).first(3),
-          competency_summary: skill_data['competency_summary']
-        )
+      PortfolioSkill.transaction do
+        portfolio.portfolio_skills.destroy_all # idempotent regeneration
+        rows.each { |row| portfolio.portfolio_skills.create!(row) }
       end
+    end
 
-      (data['discovered_skills'] || []).each do |skill_data|
-        portfolio.portfolio_skills.create!(
-          skill_id:           nil,
-          skill_label:        skill_data['skill_label'],
-          is_discovered:      true,
-          ai_level:           skill_data['level'].to_i.clamp(1, 5),
-          ai_confidence:      skill_data['confidence'],
-          evidence:           Array(skill_data['evidence']).first(3),
-          competency_summary: skill_data['competency_summary']
-        )
-      end
+    def skill_row(skill_data, discovered:)
+      {
+        skill_id:           discovered ? nil : skill_data['skill_id'],
+        skill_label:        skill_data['skill_label'],
+        is_discovered:      discovered,
+        ai_level:           parse_level(skill_data),
+        ai_confidence:      skill_data['confidence'],
+        evidence:           Array(skill_data['evidence']).first(3),
+        competency_summary: skill_data['competency_summary']
+      }
+    end
+
+    # The AI's level as an integer 1-5. Accepts 3, 3.0, "3" and "L3". Anything else
+    # (missing, 0, 7, 3.5, "high") raises, so generation fails loudly instead of the
+    # old `to_i.clamp(1, 5)`, which turned "L3" and nil into L1 (audit F5).
+    def parse_level(skill_data)
+      raw = skill_data['level']
+      level = case raw
+              when Integer then raw
+              when Float   then raw.to_i if raw == raw.floor
+              when String  then raw[LEVEL_TEXT, 1]&.to_i
+              end
+      return level if level&.between?(1, 5)
+
+      raise UnreadableLevel, "Unreadable level for '#{skill_data['skill_label']}': #{raw.inspect}"
     end
   end
 end

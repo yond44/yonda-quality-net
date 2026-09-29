@@ -6,7 +6,7 @@
 1. I read the code and compared it to the specs.
 2. I ran the whole app on my machine and **reproduced the main problems for real**. Each finding below says how to reproduce it.
 
-**Status:** F22, F1, F2, F23, F3, F24 and F4 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
+**Status:** F22, F1, F2, F23, F3, F24, F4 and F5 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
 
 ---
 
@@ -86,7 +86,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F23 | A valid login from one company works inside **any other company** (found while fixing F2) | **P1** | built-wrong | TEST | **fixed** |
 | F3 | Invite links lead candidates to a 404 page | **P1** | built-wrong | LIVE | **fixed** |
 | F4 | Removing a skill in an edit form doesn't remove it | **P1** | built-wrong | LIVE | **fixed** |
-| F5 | AI levels in an unexpected format are saved as **L1** | **P1** | built-wrong | LIVE | open |
+| F5 | AI levels in an unexpected format are saved as **L1** | **P1** | built-wrong | LIVE | **fixed** |
 | F6 | Anyone with the invite link can end the interview as "all covered" | **P1** | built-wrong | LIVE | open |
 | F7 | Candidate-vs-vacancy comparison depends on the AI repeating skill names exactly | **P1** | built-wrong | CODE | open |
 | F24 | The pre-interview internet check blocks candidates whose connection is good enough (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
@@ -299,6 +299,16 @@ The frontend's own data types describe levels as `"L1"`–`"L5"` text ([`types/i
 - Portfolio status: `complete`.
 
 > **In plain words:** when the code can't read the grade, it quietly writes "lowest grade" instead of saying "I couldn't read this". In JavaScript it's like `Math.max(1, parseInt("L3") || 0)`.
+
+**Status: fixed.**
+- **Tests:** [`f5_level_parsing_spec.rb`](../api/spec/services/f5_level_parsing_spec.rb). Its original checks (`"L3"` is read as 3; a missing level fails loudly and stores no L1) failed and now pass, unchanged. A new check was pushed on its own first, and failed: **a regeneration that fails keeps the previous good skills**. The old code deleted them before saving the new ones. The control (a plain `4` is still read as 4) passes throughout.
+- **The fix** ([`generator.rb`](../api/app/services/portfolios/generator.rb)):
+  - The level is read strictly. `3`, `"3"` and `"L3"` are accepted. Anything else (missing, `0`, `7`, `3.5`, `"high"`) stops the generation with a message naming the skill, instead of becoming L1 or being silently capped at L5.
+  - Every skill in the answer is checked **before** anything is saved. The old skills are then replaced in **one transaction**, so a bad answer never leaves a half-saved portfolio.
+- **What the user sees:** the background job already retries up to 3 times, and the AI often answers correctly on a retry. If every retry fails, the portfolio shows **failed** with the reason, and the recruiter can press **Regenerate**. A visible failure replaces a wrong grade nobody would notice.
+
+**What remains after the fix (disclosed, not hidden):**
+- The **confidence** value is still whatever the AI says (F10), and a value outside high/medium/low still fails the save. It fails loudly and cleanly now, but it's still a failure a stricter prompt could avoid.
 
 ---
 

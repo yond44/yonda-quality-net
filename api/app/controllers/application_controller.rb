@@ -77,10 +77,6 @@ class ApplicationController < ActionController::API
                              .with_indifferent_access
   end
 
-  # Edit forms send the complete list of child rows to keep (e.g. an assessment's
-  # skills). Nested attributes only delete rows marked `_destroy`, so a row left out
-  # of the list silently stayed (audit F4). Mark every existing row the list leaves
-  # out for deletion. If the list isn't sent at all, nothing is deleted.
   def with_left_out_rows_destroyed(permitted, key, existing_ids)
     rows = permitted[key]
     return permitted if rows.nil?
