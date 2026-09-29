@@ -92,6 +92,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F18 | Frontend and backend disagree on field types (shows "4" instead of "L4") | P3 | built-wrong | CODE | open |
 | F19 | A leftover sign-up page lets users choose to be "admin" | P3 | built-wrong | CODE | open |
 | F20 | Small UI issues | P3 | built-wrong | CODE | open |
+| F21 | Four pages silently swallow load errors, so a missing or forbidden record shows as an empty form (source ticket #2, closed "not planned", still present) | P2 | built-wrong | LIVE (API) + CODE | open |
 
 ---
 
@@ -358,6 +359,36 @@ It becomes **P1 if it's seen happening**.
   - The wrong text appears under "Culture & Competency Fit" ([`FitGapReportPage.tsx:173`](../web/src/pages/fitgap/FitGapReportPage.tsx#L173)).
   - A failed vacancy save shows no error ([`VacancyEditPage.tsx:42-55`](../web/src/pages/vacancies/VacancyEditPage.tsx#L42-L55)).
 
+### F21 — Load errors are swallowed, so missing records show as empty forms · P2 · LIVE (API) + CODE
+
+**Impact:**
+- Open a record that doesn't exist, or that you may not see (after the F2 fix, other companies' records return 404), and the page shows an **empty form or a blank page** instead of "not found".
+- On the edit pages, the assessor can fill in a form for a record that doesn't exist.
+
+**What goes wrong:** `.catch(() => {})` throws the error away in:
+- [`AssessmentEditPage.tsx:54`](../web/src/pages/assessments/AssessmentEditPage.tsx#L54)
+- [`AssessmentInvitePage.tsx:148`](../web/src/pages/assessments/AssessmentInvitePage.tsx#L148)
+- [`PortfolioPage.tsx:50`](../web/src/pages/portfolio/PortfolioPage.tsx#L50)
+- [`VacancyEditPage.tsx:39`](../web/src/pages/vacancies/VacancyEditPage.tsx#L39)
+
+**How I reproduced it:** `GET /api/v1/vacancies/99999` correctly returns **404** "Vacancy not found". The edit page catches that error and silently renders the empty form.
+
+This bug was **already reported** in the source repo's tracker (ticket #2, plus duplicate #4) with good acceptance criteria. It was closed as **"not planned"**, but the bug is still in the code.
+
+---
+
+## Project context found outside the code
+
+The brief says the repo carries context beyond the code. Here's what I found and how I handled it:
+
+| Source | What it is | How I handled it |
+|--------|------------|------------------|
+| **Product wiki** (2 PRDs) | The only written spec | Used as the "spec" throughout this audit. Copies are kept outside the repo, because they name the company (M8). |
+| **Ticket #1** (duplicate: #3): "backend returns an error page for invalid routes" | Closed as **"completed"**, but **no fix exists**: the main branch has only the initial import and a README change | **Re-diagnosed.** The ticket's example URL (`/interview/:token` on the backend) is really **F3**, the invite link pointing at the wrong server. The ticket's suggested fix (a nicer JSON 404) would treat the symptom and hide the root cause. Separately, in development the 404 body leaks internal exception details. |
+| **Ticket #2** (duplicate: #4): "frontend shows empty form for non-existent resources" | Closed as **"not planned"**, but **still present** | Confirmed and added as **F21**. |
+| **Pull requests on the source repo** | Around 150 open PRs, almost all third-party submissions | **Deliberately not opened.** Every finding in this audit is my own. The quality-gate PRs for this work are opened on **this** repo only. |
+| **Branch `doc/add-product-section`** | The README change already merged into main | Nothing new. |
+
 ---
 
 ## Missing or unclear specs
@@ -374,6 +405,7 @@ These aren't bugs in the code. **Nobody defined them**, so nobody can say what "
 | M6 | **No website address in the config** | Only the backend address exists, which leads directly to F3. |
 | M7 | **No rule for keeping hiring evidence** | Deleting a vacancy also deletes every fit/gap report made against it ([`vacancy.rb:7`](../api/app/models/vacancy.rb#L7)). |
 | M8 | **The public repo names the original company** | The imported code mentions it **50 times in 26 files**, plus internal cloud project, server and domain names (in `api/k8s/*`, `web/vercel.json`, READMEs and comments). That's an information leak, and it goes against the brief's "don't name the company" rule. **Fixed:** every identifier was replaced across **all of the history** (not only the latest commit), so no old commit still contains one. |
+| M9 | **No rule that a ticket needs a linked change and a test before it's closed** | In the source tracker, ticket #1 was closed as "completed" with no code change, and ticket #2 was closed while the bug still exists. So the tracker says "done" while the code says otherwise. This is exactly what the Definition-of-Done gate in Task 2 must prevent. |
 
 ---
 
@@ -412,7 +444,7 @@ These aren't bugs in the code. **Nobody defined them**, so nobody can say what "
    - tests with fake AI responses for the portfolio generator (F5, F7).
 5. **Decisions on M3** (how interviews end) **and M8** (cleaning the company name out of the repo).
 
-F8–F17 can follow in the next round, each with a test so they can't come back. F18–F20 go to the backlog.
+F8–F17 and F21 can follow in the next round, each with a test so they can't come back. F18–F20 go to the backlog.
 
 ---
 
