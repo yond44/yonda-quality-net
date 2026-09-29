@@ -138,7 +138,8 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 | **F23** a valid token opens another company *(new finding, found while fixing F2)* | [36555404757](https://github.com/yond44/yonda-quality-net/actions/runs/36555404757): 3/4 failing | [36555539895](https://github.com/yond44/yonda-quality-net/actions/runs/36555539895) (F23 no longer flagged) | The verified token's company must equal the request's company, checked once where every logged-in request passes |
 | **F3** invite link opens a 404 | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 1/2 failing | [36557839764](https://github.com/yond44/yonda-quality-net/actions/runs/36557839764) (F3 no longer flagged) | Invite links use a new `WEB_BASE_URL` (the web app), and production refuses to boot without it |
 | **F24** internet check blocks good connections *(found in manual testing)* | [36563351392](https://github.com/yond44/yonda-quality-net/actions/runs/36563351392): 5/6 failing (web tests) | [36563510380](https://github.com/yond44/yonda-quality-net/actions/runs/36563510380) (web check green) | Limits derived from the voice audio; upload and ping measured on our own backend, one at a time; a failed measurement is "couldn't measure", never an invented number |
-| **F4–F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 12 failing, 0 errors | *Task 3* | *Task 3* |
+| **F4** removed skills stay in the database | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/2 failing | the `fix(F4)` commit's run | The edit endpoints treat the sent list as complete: skills left out of it are deleted in the same save |
+| **F5–F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 10 failing, 0 errors | *Task 3* | *Task 3* |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
 
@@ -301,6 +302,36 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   ```
 - **Why this way:** the check should answer one question: *can this connection carry the interview?* So it measures the interview's own path, with limits taken from the interview's own audio format. The limits are an assumption, because no spec defines them (audit M10).
 - **Green:** [36563510380](https://github.com/yond44/yonda-quality-net/actions/runs/36563510380).
+
+### F4: removing a skill in the edit form didn't remove it (P1)
+
+- **Red:** [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611), 2/2 failing.
+- **Root cause:** the website sends the list of skills to **keep**. The backend's nested-attributes feature only deletes a skill marked `_destroy: true`, and the website never sends that marker. So a skill left out of the list silently stayed: the screen showed it gone, but the database kept it.
+- **Files changed:**
+  - [`application_controller.rb:80-93`](../api/app/controllers/application_controller.rb#L80-L93): a new shared helper
+  - [`assessments_controller.rb:42-44`](../api/app/controllers/api/v1/assessments_controller.rb#L42-L44) and [`vacancies_controller.rb:39-41`](../api/app/controllers/api/v1/vacancies_controller.rb#L39-L41): both edit endpoints use it
+  - [`f4_removed_skills_spec.rb:39-60`](../api/spec/requests/f4_removed_skills_spec.rb#L39-L60): 2 controls added. The original checks are unchanged.
+- **Before → after:**
+  ```ruby
+  # BEFORE: the list goes straight in; anything missing from it is left alone
+  if @assessment.update(assessment_params)
+
+  # AFTER: every existing skill missing from the list is marked for deletion first
+  attributes = with_left_out_rows_destroyed(assessment_params, :assessment_skills_attributes,
+                                            @assessment.assessment_skills.pluck(:id))
+  if @assessment.update(attributes)
+
+  # the helper, in short:
+  kept_ids = rows.filter_map { |row| row[:id].presence&.to_s }
+  left_out = existing_ids.map(&:to_s) - kept_ids
+  permitted.merge(key => rows + left_out.map { |id| { id:, _destroy: true } })
+  ```
+  In JavaScript terms: `const removed = existingIds.filter(id => !sentIds.includes(id)); rows.push(...removed.map(id => ({ id, _destroy: true })))`.
+- **Why this way:**
+  - **Backend, not website:** "send the list I want" is the natural contract, and the backend was the side misreading it. The red test sends the website's real payload, so changing the website instead would have meant changing the test.
+  - **Reusing Rails' own `_destroy` marker** means the deletions happen inside Rails' normal save, in one transaction. A rejected save deletes nothing, and one of the new controls proves it.
+  - **Only when a list is sent.** An edit that only renames the assessment keeps every skill; the other new control proves that.
+- **Green:** the `fix(F4)` commit's run.
 
 ## Assumptions
 

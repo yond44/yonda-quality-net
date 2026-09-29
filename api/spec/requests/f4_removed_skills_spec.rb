@@ -35,4 +35,27 @@ RSpec.describe 'F4: a skill removed in the edit form is really removed', type: :
     expect(response).to have_http_status(:ok)
     expect(vacancy.vacancy_skills.reload.pluck(:skill_label)).to eq(['Keep Me'])
   end
+
+  it 'keeps every skill when the edit does not send a skills list (control: no over-deleting)' do
+    assessment = create_assessment(org, skills: ['Keep Me', 'Also Keep Me'])
+
+    put "/api/v1/assessments/#{assessment.id}", headers: auth_headers(org),
+                                                params: { assessment: { name: 'Renamed' } }.to_json
+
+    expect(response).to have_http_status(:ok)
+    expect(assessment.assessment_skills.reload.pluck(:skill_label)).to match_array(['Keep Me', 'Also Keep Me'])
+  end
+
+  it 'deletes nothing when the save is rejected (control: all or nothing)' do
+    assessment = create_assessment(org, skills: ['Keep Me', 'Remove Me'])
+    kept = assessment.assessment_skills.find_by!(skill_label: 'Keep Me')
+
+    put "/api/v1/assessments/#{assessment.id}", headers: auth_headers(org), params: { assessment: {
+      time_limit_min: 7, # not an allowed time limit, so the save is rejected
+      assessment_skills_attributes: [{ id: kept.id, skill_label: 'Keep Me' }]
+    } }.to_json
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(assessment.assessment_skills.reload.pluck(:skill_label)).to match_array(['Keep Me', 'Remove Me'])
+  end
 end

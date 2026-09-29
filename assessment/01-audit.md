@@ -6,7 +6,7 @@
 1. I read the code and compared it to the specs.
 2. I ran the whole app on my machine and **reproduced the main problems for real**. Each finding below says how to reproduce it.
 
-**Status:** F22, F1, F2, F23, F3 and F24 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
+**Status:** F22, F1, F2, F23, F3, F24 and F4 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
 
 ---
 
@@ -85,7 +85,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F2 | One company can read **and change** another company's candidate data | **P1** | built-wrong | LIVE | **fixed** |
 | F23 | A valid login from one company works inside **any other company** (found while fixing F2) | **P1** | built-wrong | TEST | **fixed** |
 | F3 | Invite links lead candidates to a 404 page | **P1** | built-wrong | LIVE | **fixed** |
-| F4 | Removing a skill in an edit form doesn't remove it | **P1** | built-wrong | LIVE | open |
+| F4 | Removing a skill in an edit form doesn't remove it | **P1** | built-wrong | LIVE | **fixed** |
 | F5 | AI levels in an unexpected format are saved as **L1** | **P1** | built-wrong | LIVE | open |
 | F6 | Anyone with the invite link can end the interview as "all covered" | **P1** | built-wrong | LIVE | open |
 | F7 | Candidate-vs-vacancy comparison depends on the AI repeating skill names exactly | **P1** | built-wrong | CODE | open |
@@ -269,6 +269,15 @@ This corrupts another company's hiring decisions.
 3. The server still has both skills. (The vacancy form uses the same mechanism.)
 
 > **In plain words:** the form says "here are the skills I want", but the server hears "here are the skills to update". Nothing ever says "delete this one".
+
+**Status: fixed.**
+- **Test first:** [`f4_removed_skills_spec.rb`](../api/spec/requests/f4_removed_skills_spec.rb) sends exactly what the edit pages send. Its 2 original checks failed and now pass, unchanged. The fix commit adds 2 **controls** that pass with and without the fix: an edit **without** a skills list keeps every skill, and a rejected save deletes nothing.
+- **The fix:** the backend now treats the list the form sends as the **complete** list. Any existing skill left out of it is deleted, in the same database transaction as the rest of the save ([`application_controller.rb`](../api/app/controllers/application_controller.rb), used by the assessment and vacancy edit endpoints). The website needed no change.
+- **Why the backend and not the website:** "send the list I want" is the natural contract, and the backend was the side misreading it. Fixing it there protects every client, not just this page.
+
+**What remains after the fix (disclosed, not hidden):**
+- **Fit/gap reports generated before a vacancy's skills were edited are cached**, and keep showing the old requirements until someone regenerates them. The rating-override feature already regenerates reports when its input changes. Doing the same for vacancy edits is a small follow-up.
+- **Editing an assessment after interviews happened** still changes what earlier candidates are compared against. That's M5 (no versioning), a product decision.
 
 ---
 

@@ -36,7 +36,9 @@ module Api
 
       # PUT /api/v1/vacancies/:id
       def update
-        if @vacancy.update(vacancy_params)
+        attributes = with_left_out_rows_destroyed(vacancy_params, :vacancy_skills_attributes,
+                                                  @vacancy.vacancy_skills.pluck(:id))
+        if @vacancy.update(attributes)
           json_response(vacancy: vacancy_with_skills_json(@vacancy))
         else
           json_error(@vacancy.errors.full_messages.first, :unprocessable_entity)

@@ -39,7 +39,9 @@ module Api
 
       # PUT /api/v1/assessments/:id
       def update
-        if @assessment.update(assessment_params)
+        attributes = with_left_out_rows_destroyed(assessment_params, :assessment_skills_attributes,
+                                                  @assessment.assessment_skills.pluck(:id))
+        if @assessment.update(attributes)
           SystemPromptGeneratorWorker.perform_async(@assessment.id)
           json_response({ assessment: assessment_with_skills_json(@assessment), system_prompt_generated: true })
         else
