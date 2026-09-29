@@ -139,7 +139,7 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 | **F3** invite link opens a 404 | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 1/2 failing | [36557839764](https://github.com/yond44/yonda-quality-net/actions/runs/36557839764) (F3 no longer flagged) | Invite links use a new `WEB_BASE_URL` (the web app), and production refuses to boot without it |
 | **F24** internet check blocks good connections *(found in manual testing)* | [36563351392](https://github.com/yond44/yonda-quality-net/actions/runs/36563351392): 5/6 failing (web tests) | [36563510380](https://github.com/yond44/yonda-quality-net/actions/runs/36563510380) (web check green) | Limits derived from the voice audio; upload and ping measured on our own backend, one at a time; a failed measurement is "couldn't measure", never an invented number |
 | **F4** removed skills stay in the database | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/2 failing | [36565150346](https://github.com/yond44/yonda-quality-net/actions/runs/36565150346) (F4 no longer flagged) | The edit endpoints treat the sent list as complete: skills left out of it are deleted in the same save |
-| **F5** an unreadable AI level is saved as L1 | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/3 failing; the new regeneration check: the `test(F5)` commit's run | the `fix(F5)` commit's run | The level is read strictly (3, "3", "L3") or generation fails loudly; all skills are checked first, then saved in one transaction |
+| **F5** an unreadable AI level is saved as L1 | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/3 failing; the new regeneration check: [36566738655](https://github.com/yond44/yonda-quality-net/actions/runs/36566738655) (3/4 failing) | [36568044569](https://github.com/yond44/yonda-quality-net/actions/runs/36568044569) (F5 no longer flagged) | The level is read strictly (3, "3", "L3") or generation fails loudly; all skills are checked first, then saved in one transaction |
 | **F6–F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 8 failing, 0 errors | *Task 3* | *Task 3* |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
@@ -336,7 +336,7 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
 
 ### F5: an AI level the code couldn't read was saved as L1 (P1)
 
-- **Red:** [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611), 2/3 failing. The new regeneration check failed on its own in the `test(F5)` commit's run.
+- **Red:** [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611), 2/3 failing. The new regeneration check failed on its own in [36566738655](https://github.com/yond44/yonda-quality-net/actions/runs/36566738655) (3/4 failing).
 - **Root cause:** the level was saved with `skill_data['level'].to_i.clamp(1, 5)`. In Ruby, `"L3".to_i` and `nil.to_i` are both `0`, and clamping 0 into 1–5 gives **1**. The portfolio was then marked complete, so a candidate who was really L3 showed as L1, and fit/gap reported a fake gap. Separately, the old skills were deleted **before** the new ones were saved one by one, so a bad answer part-way through left a half-saved portfolio.
 - **Files changed:**
   - [`generator.rb:8-10`](../api/app/services/portfolios/generator.rb#L8-L10): the error class and the accepted text form
@@ -371,7 +371,7 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - **Fail, don't guess.** A wrong grade on a real candidate is worse than a visible failure. The job retries automatically, and the recruiter can press Regenerate.
   - **Accept `"L3"`:** it's unambiguous, and the website's own types describe levels that way, so rejecting it would cause needless failures.
   - **Check first, then save in one transaction:** a regeneration must never destroy a good earlier result on its way to failing.
-- **Green:** the `fix(F5)` commit's run.
+- **Green:** [36568044569](https://github.com/yond44/yonda-quality-net/actions/runs/36568044569) (F5 no longer flagged).
 
 ## Assumptions
 
