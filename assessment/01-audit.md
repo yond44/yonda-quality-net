@@ -373,7 +373,7 @@ These aren't bugs in the code. **Nobody defined them**, so nobody can say what "
 | M5 | **No versioning when an assessment is edited after interviews happened** | Editing skills changes what past candidates are compared against. |
 | M6 | **No website address in the config** | Only the backend address exists, which leads directly to F3. |
 | M7 | **No rule for keeping hiring evidence** | Deleting a vacancy also deletes every fit/gap report made against it ([`vacancy.rb:7`](../api/app/models/vacancy.rb#L7)). |
-| M8 | **The public repo names the original company** | The imported code mentions it **50 times in 26 files**, plus internal cloud project, server and domain names (in `api/k8s/*`, `web/vercel.json`, READMEs and comments). That's an information leak, and it goes against the brief's "don't name the company" rule. **This needs a decision to clean it up.** |
+| M8 | **The public repo names the original company** | The imported code mentions it **50 times in 26 files**, plus internal cloud project, server and domain names (in `api/k8s/*`, `web/vercel.json`, READMEs and comments). That's an information leak, and it goes against the brief's "don't name the company" rule. **Fixed:** every identifier was replaced across **all of the history** (not only the latest commit), so no old commit still contains one. |
 
 ---
 
@@ -413,6 +413,24 @@ These aren't bugs in the code. **Nobody defined them**, so nobody can say what "
 5. **Decisions on M3** (how interviews end) **and M8** (cleaning the company name out of the repo).
 
 F8–F17 can follow in the next round, each with a test so they can't come back. F18–F20 go to the backlog.
+
+---
+
+## Note: how this repo differs from the original source
+
+To follow the brief's confidentiality rule (M8), the imported code was cleaned **in every commit, including "Initial import of the platform"**. So the initial import is *not* byte-for-byte the original source. The only differences are 50 identifier lines in 26 files, and no behaviour changed except the database names:
+
+| What was replaced | Replaced with |
+|---|---|
+| The company name in code comments ("extracted from …-api") | "the upstream platform API" |
+| Database names (`…_development`, `…_test`) | `platform_development`, `platform_test` |
+| Production domain in the k8s ingress/config and the web security policy | `ai-interview-api.example.com` |
+| Cloud project and image registry path | `registry.example.com/ai-interview/ai-interview-api` |
+| Internal node-pool names | `dedicated-t2d-pool`, `dedicated-compute-class` |
+| Product wiki link in the README | "the product wiki" |
+| Brand name in the app header and CSS comments | "AI Interview", "Brand teal/yellow" |
+
+This was checked by searching every commit (zero matches), and by confirming that every line that changed contained one of these identifiers.
 
 ---
 
