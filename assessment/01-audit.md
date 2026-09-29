@@ -6,7 +6,7 @@
 1. I read the code and compared it to the specs.
 2. I ran the whole app on my machine and **reproduced the main problems for real**. Each finding below says how to reproduce it.
 
-**Status:** F22, F1, F2, F23 and F3 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
+**Status:** F22, F1, F2, F23, F3 and F24 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
 
 ---
 
@@ -89,7 +89,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F5 | AI levels in an unexpected format are saved as **L1** | **P1** | built-wrong | LIVE | open |
 | F6 | Anyone with the invite link can end the interview as "all covered" | **P1** | built-wrong | LIVE | open |
 | F7 | Candidate-vs-vacancy comparison depends on the AI repeating skill names exactly | **P1** | built-wrong | CODE | open |
-| F24 | The pre-interview internet check blocks candidates whose connection is good enough (found in manual testing) | **P1** | built-wrong | LIVE | open |
+| F24 | The pre-interview internet check blocks candidates whose connection is good enough (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F8 | "Required" column in the fit/gap table is always empty | P2 | built-wrong | LIVE | open |
 | F9 | Delete says "deleted" but nothing is deleted | P2 | built-wrong | LIVE | open |
 | F10 | The AI decides "confidence", although the spec gives a fixed rule | P2 | built-wrong | CODE | open |
@@ -355,11 +355,18 @@ The frontend's own data types describe levels as `"L1"`–`"L5"` text ([`types/i
 
 > **In plain words:** it's like refusing to let someone make a phone call unless their line could stream 4K video, and measuring the line by mailing a parcel to a warehouse abroad and waiting for it to come back.
 
-**Planned fix (after F4–F8):**
-- Limits derived from the audio format, with a safety margin, written down as an assumption (see M10).
-- Measure against our own backend, one measurement at a time.
-- No invented numbers: a measurement that fails means "couldn't check", with a retry, never an automatic pass or fail.
-- A web unit test for the decision logic, since the gate requires a test for any `web/src` change.
+**Status: fixed.**
+- **Test first:** [`internetSpeedTest.test.ts`](../web/src/utils/internetSpeedTest.test.ts), the web app's first automated test (Vitest, now run by CI). It runs the **real** check on a simulated network, where every request takes the time the given speed and ping would need. It was committed while 5 of its 6 examples failed. The fix made all 6 pass, with the checks unchanged. The 6th example is a control: a 0.2 Mbps upload must still **fail**, so the fix can't just wave everyone through.
+- **The fix** ([`internetSpeedTest.ts`](../web/src/utils/internetSpeedTest.ts), [`HardwareCheck.tsx`](../web/src/components/HardwareCheck.tsx)):
+  - **Limits from the audio format:** download ≥ 1.5 Mbps and upload ≥ 1 Mbps, about 4 times what the voice interview uses. Ping stays at ≤ 300 ms. The derivation is written next to the numbers.
+  - **Upload and ping are measured against our own backend** (`/api/v1/speed_test` and `/api/v1/health`), the path the interview audio really takes.
+  - **One measurement at a time**, so they don't compete.
+  - **No invented numbers.** A failed measurement or an HTTP error counts as "couldn't measure". The check then fails, and the page says *"We couldn't measure your connection"* with the Retry button, instead of showing made-up speeds.
+- **Assumption (M10):** the limits are my derivation from the code, not a product decision. If the product later adds video, they must go up.
+
+**What remains after the fix (disclosed, not hidden):**
+- **Download is still timed on public CDN files**, because the backend has no download endpoint. With a 1.5 Mbps limit a CDN almost never decides the result, but a candidate whose network blocks those CDNs would see "couldn't measure".
+- **Upload is measured to our own backend.** If the backend is down, the check says "couldn't measure", which is correct: the interview couldn't run either.
 
 ---
 

@@ -240,7 +240,12 @@ const HardwareCheck: React.FC<HardwareCheckProps> = ({ onStart }) => {
                         </div>
 
                         {/* Internet speed details */}
-                        {key === "internet" && internetResult && (
+                        {key === "internet" && internetResult && !internetResult.measured && (
+                            <p className="mt-2 text-xs text-destructive">
+                                We couldn't measure your connection. Check that you're online, then press Retry.
+                            </p>
+                        )}
+                        {key === "internet" && internetResult?.measured && (
                             <div className="mt-2 flex gap-3 text-xs">
                                 <span className={internetResult.download >= thresholds.minDownloadMbps ? "text-green-600" : "text-destructive"}>
                                     ↓ {internetResult.download} Mbps
