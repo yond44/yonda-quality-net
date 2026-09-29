@@ -35,4 +35,18 @@ RSpec.describe 'F5: an AI level the code cannot read is never stored as L1', typ
     expect(portfolio.generation_error).to match(/level/i)
     expect(portfolio.portfolio_skills.where(ai_level: 1)).to be_empty
   end
+
+  it 'keeps the previous skills when a regeneration fails, instead of leaving a half-saved portfolio' do
+    two_skills = create_interview_session(create_assessment(create_org('beta'), skills: %w[Negotiation Communication]),
+                                          status: 'ended', end_reason: 'all_covered')
+    first_run = FakePortfolioModel.new(levels: { 'Negotiation' => 4, 'Communication' => 3 })
+    Portfolios::Generator.new(session: two_skills, gemini_client: first_run).call
+
+    broken_run = FakePortfolioModel.new(levels: { 'Negotiation' => 2, 'Communication' => nil })
+    expect { Portfolios::Generator.new(session: two_skills, gemini_client: broken_run).call }.to raise_error(StandardError)
+
+    portfolio = two_skills.reload.portfolio
+    expect(portfolio.generation_status).to eq('failed')
+    expect(portfolio.portfolio_skills.pluck(:skill_label, :ai_level)).to match_array([['Negotiation', 4], ['Communication', 3]])
+  end
 end
