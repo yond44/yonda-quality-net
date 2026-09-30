@@ -59,7 +59,11 @@ module FitGap
           skill_label:     label,
           skill_id:        vacancy_skill.skill_id,
           candidate_level: candidate_level,
+          # The web reads required_level and is_override (web/src/types/index.ts,
+          # SkillComparison); expected_level stays for the PDF export and stored reports (audit F8).
+          required_level:  expected_level,
           expected_level:  expected_level,
+          is_override:     portfolio_skill.present? && portfolio_skill[:overridden],
           result:          result,
           delta:           delta,
           confidence:      portfolio_skill&.dig(:confidence)

@@ -6,7 +6,7 @@
 1. I read the code and compared it to the specs.
 2. I ran the whole app on my machine and **reproduced the main problems for real**. Each finding below says how to reproduce it.
 
-**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25, F6, F7, F26 and F27 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
+**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25, F6, F7, F26, F27 and F8 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
 
 ---
 
@@ -93,7 +93,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F25 | A dropped connection tells the candidate "Interview Complete", and the interview stays "Live" forever (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F26 | The AI sometimes never opens the interview; the candidate is stuck in silence with a muted mic (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F27 | The AI can read its hidden notes aloud, and the transcript hides it from the recruiter (found in manual testing) | P2 | built-wrong | LIVE + TEST | **fixed** |
-| F8 | "Required" column in the fit/gap table is always empty | P2 | built-wrong | LIVE | open |
+| F8 | "Required" column in the fit/gap table is always empty | P2 | built-wrong | LIVE | **fixed** |
 | F9 | Delete says "deleted" but nothing is deleted | P2 | built-wrong | LIVE | open |
 | F10 | The AI decides "confidence", although the spec gives a fixed rule | P2 | built-wrong | CODE | open |
 | F11 | Coverage updates that run at the same time can overwrite each other | P2 | built-wrong | RISK | open |
@@ -559,6 +559,14 @@ The stored data is correct (the PDF export shows it), so this is P2. But for a "
 **How I reproduced it:** the fit/gap response contains `"expected_level":3`, and has no `required_level` or `is_override`.
 
 > **In plain words:** the backend labels the box "expected", the frontend looks for a box labelled "required", finds nothing, and shows an empty cell. No error, just a blank.
+
+**Status: fixed** (in the pull request that demonstrates the gate passing).
+- **Tests:** [`f8_fitgap_contract_spec.rb`](../api/spec/requests/f8_fitgap_contract_spec.rb) is a contract test. It reads the field list from the **website's own TypeScript type**, so renaming a field on either side fails the build. Its 3 checks failed and now pass, unchanged: every field the web requires is sent; the Required column gets the vacancy's level; an overridden rating is marked.
+- **The fix:** each comparison now also carries `required_level` and `is_override` ([`engine.rb:62-66`](../api/app/services/fit_gap/engine.rb#L62-L66)). `expected_level` stays, because the PDF export and already-saved reports use it. Reports saved before the fix get `required_level` filled in when they're read ([`portfolios_controller.rb:211-212`](../api/app/controllers/api/v1/portfolios_controller.rb#L211-L212)), so old reports show it too.
+- **Why the backend, although the audit found the frontend was the "wrong" side:** adding fields changes nothing that works today. Renaming the web's fields would have meant changing the contract test's source of truth, and every stored report would still lack them.
+
+**What remains after the fix (disclosed, not hidden):**
+- **Two names for one value** (`expected_level` and `required_level`) now travel together. Merging them is a follow-up, once the PDF export is moved to the new name.
 
 ---
 
