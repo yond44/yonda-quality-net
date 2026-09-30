@@ -39,7 +39,9 @@ module Coverage
 
       Rails.logger.info("[MapInjector] Coverage map: skills_remaining=#{skills_left} avg_min=#{avg_min} pacing=#{pacing_bucket(avg_min)} priority_next=#{payload[:priority_next]}")
 
-      "[COVERAGE_MAP]\n#{payload.to_json}\n[/COVERAGE_MAP]"
+      # The same tag the AI's instructions tell it to keep silent (audit F27); it used to be
+      # "[COVERAGE_MAP]", which the instructions never named.
+      "[COVERAGE MAP]\n#{payload.to_json}\n[/COVERAGE MAP]"
     end
 
     # Returns true when every configured skill is covered AND no discovered

@@ -148,6 +148,7 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 | **F6** interviews recorded "all covered" without checking | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/3 failing | [36663487852](https://github.com/yond44/yonda-quality-net/actions/runs/36663487852) (F6 no longer flagged) | `all_covered` is checked where every ending is recorded (otherwise `partial_coverage`); a never-started interview can't be ended |
 | **F7** results depend on the AI spelling skill names exactly | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 3/3 failing | the `fix(F7)` commit's run | Each skill gets a unique reference in the prompt; answers are mapped back through it and stored under the configured name; a missing skill fails loudly |
 | **F26** the AI never opens the interview; the candidate is stuck muted *(found in manual testing)* | the `test(F26)` commit's run: 2/3 failing | the `fix(F26)` commit's run | A watchdog asks again after 10 s, then gives the turn back to the candidate; the start message is signed |
+| **F27** the AI reads its hidden notes aloud, and the record hides it *(found in manual testing)* | the `test(F27)` commit's run: 2/3 failing | the `fix(F27)` commit's run | Notes are sent under the tag the AI is told to keep silent; a slip is marked in the recruiter's transcript |
 | **F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 3 failing, 0 errors | *Task 3* | *Task 3* |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
@@ -347,8 +348,8 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
 - **Red:** [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611), 2/3 failing. The new regeneration check failed on its own in [36566738655](https://github.com/yond44/yonda-quality-net/actions/runs/36566738655) (3/4 failing).
 - **Root cause:** the level was saved with `skill_data['level'].to_i.clamp(1, 5)`. In Ruby, `"L3".to_i` and `nil.to_i` are both `0`, and clamping 0 into 1–5 gives **1**. The portfolio was then marked complete, so a candidate who was really L3 showed as L1, and fit/gap reported a fake gap. Separately, the old skills were deleted **before** the new ones were saved one by one, so a bad answer part-way through left a half-saved portfolio.
 - **Files changed:**
-  - [`generator.rb:8-10`](../api/app/services/portfolios/generator.rb#L8-L10): the error class and the accepted text form
-  - [`generator.rb:154-193`](../api/app/services/portfolios/generator.rb#L154-L193): `save_skills`, the new `skill_row` and `parse_level`
+  - [`generator.rb:8-11`](../api/app/services/portfolios/generator.rb#L8-L11): the error class and the accepted text form
+  - [`generator.rb:158-224`](../api/app/services/portfolios/generator.rb#L158-L224): `save_skills`, the new `skill_row` and `parse_level`
   - [`f5_level_parsing_spec.rb:39-52`](../api/spec/services/f5_level_parsing_spec.rb#L39-L52): the new regeneration check, pushed before the fix
 - **Before → after:**
   ```ruby
@@ -512,7 +513,7 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - [`live_client.rb:406`](../api/app/clients/gemini/live_client.rb#L406): the AI's first audio marks the opening as answered
   - [`live_client.rb:128`](../api/app/clients/gemini/live_client.rb#L128) and [`:139`](../api/app/clients/gemini/live_client.rb#L139): the watchdog stops when the client closes
   - [`audio_websocket_middleware.rb:23-26`](../api/app/channels/audio_websocket_middleware.rb#L23-L26): the signed start message
-  - [`audio_websocket_middleware.rb:155`](../api/app/channels/audio_websocket_middleware.rb#L155), [`:344`](../api/app/channels/audio_websocket_middleware.rb#L344) and [`:354-360`](../api/app/channels/audio_websocket_middleware.rb#L354-L360): the signed message is used, and the turn is given back
+  - [`audio_websocket_middleware.rb:155`](../api/app/channels/audio_websocket_middleware.rb#L155), [`:362`](../api/app/channels/audio_websocket_middleware.rb#L362) and [`:372-378`](../api/app/channels/audio_websocket_middleware.rb#L372-L378): the signed message is used, and the turn is given back
 - **Before → after:**
   ```ruby
   # live_client.rb — BEFORE: sent once, never checked
@@ -546,6 +547,39 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - **Retry once, then hand over.** A second try covers a one-off miss; giving the candidate the turn after that lets their voice restart the conversation, instead of making them wait longer.
   - **The check sits in the AI client,** where the AI's first audio is seen, so it can be tested without a live connection.
 - **Green:** the `fix(F26)` commit's run.
+
+### F27: the AI could read its hidden notes aloud, and the transcript hid it (P2, found in manual testing)
+
+- **Red:** the `test(F27)` commit's run, 2/3 failing.
+- **Root cause:** two mismatches.
+  - The AI's instructions say to keep silent any message that starts with `[COVERAGE MAP`, but the app sent its notes as `[COVERAGE_MAP]`, so the rule described a tag the AI never received.
+  - A text filter then removed any echo of the notes from the transcript **without a trace**, so the recruiter couldn't know the candidate might have heard them.
+- **Files changed:**
+  - [`map_injector.rb:42-44`](../api/app/services/coverage/map_injector.rb#L42-L44): the tag the notes are sent under
+  - [`audio_websocket_middleware.rb:235-254`](../api/app/channels/audio_websocket_middleware.rb#L235-L254): the recruiter's transcript and the candidate's live transcript get different text
+  - [`audio_websocket_middleware.rb:283-294`](../api/app/channels/audio_websocket_middleware.rb#L283-L294): `recruiter_transcript_text`, the marker
+- **Before → after:**
+  ```ruby
+  # map_injector.rb
+  # BEFORE: a tag the AI's instructions never name
+  "[COVERAGE_MAP]\n#{payload.to_json}\n[/COVERAGE_MAP]"
+  # AFTER: the tag the instructions tell the AI to keep silent
+  "[COVERAGE MAP]\n#{payload.to_json}\n[/COVERAGE MAP]"
+
+  # audio_websocket_middleware.rb
+  # BEFORE: the echo is removed and nobody knows it happened
+  text = sanitize_output_transcription(text)
+  save_transcript_turn(session, turn_number, 'ai', text)
+  # AFTER: the recruiter's copy says what happened; the candidate's page gets the clean words
+  recruiter_text = recruiter_transcript_text(text)   # adds the marker if anything was removed
+  text = sanitize_output_transcription(text)
+  save_transcript_turn(session, turn_number, 'ai', recruiter_text)
+  ```
+- **Why this way:**
+  - **Fix the sender, not the instructions.** Every assessment stores its compiled instructions. Changing the tag the app sends makes all of them correct at once; changing the wording would only reach assessments that are recompiled.
+  - **A contract test, not a copy of the tag in the test.** The test reads the tag from the real compiled instructions, so if either side changes the tag again, CI goes red.
+  - **Record the slip instead of hiding it.** The audio can't be taken back, so the honest option is to make it visible to the recruiter.
+- **Green:** the `fix(F27)` commit's run.
 
 ## Assumptions
 

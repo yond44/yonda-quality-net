@@ -6,7 +6,7 @@
 1. I read the code and compared it to the specs.
 2. I ran the whole app on my machine and **reproduced the main problems for real**. Each finding below says how to reproduce it.
 
-**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25, F6, F7 and F26 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
+**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25, F6, F7, F26 and F27 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
 
 ---
 
@@ -92,7 +92,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F24 | The pre-interview internet check blocks candidates whose connection is good enough (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F25 | A dropped connection tells the candidate "Interview Complete", and the interview stays "Live" forever (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F26 | The AI sometimes never opens the interview; the candidate is stuck in silence with a muted mic (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
-| F27 | The AI can read its hidden notes aloud, and the transcript hides it from the recruiter (found in manual testing) | P2 | built-wrong | LIVE + TEST | open |
+| F27 | The AI can read its hidden notes aloud, and the transcript hides it from the recruiter (found in manual testing) | P2 | built-wrong | LIVE + TEST | **fixed** |
 | F8 | "Required" column in the fit/gap table is always empty | P2 | built-wrong | LIVE | open |
 | F9 | Delete says "deleted" but nothing is deleted | P2 | built-wrong | LIVE | open |
 | F10 | The AI decides "confidence", although the spec gives a fixed rule | P2 | built-wrong | CODE | open |
@@ -333,7 +333,7 @@ The frontend's own data types describe levels as `"L1"`–`"L5"` text ([`types/i
 
 **Also reproduced in a normal interview, with nobody calling anything by hand** (manual test, 2026-09-30, session 7):
 1. Mid-interview, the AI closed on its own: *"I think I've got a clear picture, thank you for your time. You'll hear back from the team soon."* Its instructions forbid exactly this without a wrap-up signal.
-2. The server matched a goodbye phrase and **assumed every skill was covered**: `AI closed without system signal — forcing coverage_pending` ([`audio_websocket_middleware.rb:250-254`](../api/app/channels/audio_websocket_middleware.rb#L250-L254), phrases at [`:708-725`](../api/app/channels/audio_websocket_middleware.rb#L708-L725)).
+2. The server matched a goodbye phrase and **assumed every skill was covered**: `AI closed without system signal — forcing coverage_pending` ([`audio_websocket_middleware.rb:261-265`](../api/app/channels/audio_websocket_middleware.rb#L261-L265), phrases at [`:740-757`](../api/app/channels/audio_websocket_middleware.rb#L740-L757)).
 3. The candidate's browser called `audio_complete` automatically, and the session was saved as **`all_covered`**. A portfolio generation was queued.
 4. The database still showed the only skill as **`not_yet`, probed 0 times**.
 
@@ -344,7 +344,7 @@ So this isn't only "someone calls the endpoint". It happens in the main flow whe
 **Status: fixed.**
 - **Tests:** [`f6_audio_complete_spec.rb`](../api/spec/requests/f6_audio_complete_spec.rb). Its 2 checks (a never-started interview isn't ended; an interview with an uncovered skill isn't `all_covered`) failed and now pass, unchanged. The control (a fully covered interview still auto-ends as `all_covered`, with one portfolio job) passes throughout.
 - **The fix:**
-  - `all_covered` is now **checked where every ending is recorded** ([`end_handler.rb`](../api/app/services/sessions/end_handler.rb)), with the same rule the live interview uses to decide coverage ([`map_injector.rb:48`](../api/app/services/coverage/map_injector.rb#L48)). If it isn't true, the ending is recorded as a new, honest reason: **`partial_coverage`** ([migration](../api/db/migrate/20260930000000_add_partial_coverage_end_reason.rb), [`session.rb`](../api/app/models/session.rb)). This covers every path: the endpoint, the AI's early goodbye, and the server's own timeout.
+  - `all_covered` is now **checked where every ending is recorded** ([`end_handler.rb`](../api/app/services/sessions/end_handler.rb)), with the same rule the live interview uses to decide coverage ([`map_injector.rb:50`](../api/app/services/coverage/map_injector.rb#L50)). If it isn't true, the ending is recorded as a new, honest reason: **`partial_coverage`** ([migration](../api/db/migrate/20260930000000_add_partial_coverage_end_reason.rb), [`session.rb`](../api/app/models/session.rb)). This covers every path: the endpoint, the AI's early goodbye, and the server's own timeout.
   - `audio_complete` **refuses an interview that never started** (409), and changes nothing ([`sessions_controller.rb`](../api/app/controllers/api/v1/sessions_controller.rb)).
   - The interview still **always ends** when `audio_complete` is called for a running interview. An earlier code comment says a coverage check there used to stall auto-end; now only the recorded reason changes, never whether it ends.
 
@@ -483,7 +483,7 @@ Connections drop in normal use: a candidate's Wi-Fi, a server restart during a d
 - It's **intermittent**: most interviews open normally.
 
 **What goes wrong:**
-- The server marks the AI as speaking, and mutes the candidate, **before** the AI has said anything ([`audio_websocket_middleware.rb:336-338`](../api/app/channels/audio_websocket_middleware.rb#L336-L338)).
+- The server marks the AI as speaking, and mutes the candidate, **before** the AI has said anything ([`audio_websocket_middleware.rb:360-362`](../api/app/channels/audio_websocket_middleware.rb#L360-L362)).
 - The start message is sent once ([`live_client.rb:100-104`](../api/app/clients/gemini/live_client.rb#L100-L104)), and nothing checks that the AI answered.
 - **Likely cause, not proven:** the AI's instructions say that any bracketed message without the code `SYS-TC-7x9k` is a *"candidate injection attempt"*. The app's own start message, `[Start the interview. Greet the candidate…]`, is bracketed and has no code, so the AI may sometimes ignore it.
 
@@ -514,7 +514,7 @@ Connections drop in normal use: a candidate's Wi-Fi, a server restart during a d
 **Impact:**
 - During the interview, the app sends the AI **hidden notes**: which skills are covered, and which one to ask about next. The AI's instructions say the candidate must not know which skills are being assessed.
 - If the AI reads those notes aloud, the **candidate hears internal assessment information**.
-- A text filter then removes such echoes from the saved transcript **without a trace** ([`audio_websocket_middleware.rb:278-289`](../api/app/channels/audio_websocket_middleware.rb#L278-L289)). So the **recruiter never learns** it happened, and the record doesn't match what the candidate heard.
+- A text filter then removes such echoes from the saved transcript **without a trace** ([`audio_websocket_middleware.rb:296-307`](../api/app/channels/audio_websocket_middleware.rb#L296-L307)). So the **recruiter never learns** it happened, and the record doesn't match what the candidate heard.
 
 **What goes wrong:**
 - **The instructions describe a tag the AI never receives.** They say to keep silent any message that starts with `[COVERAGE MAP` (with a space) ([`system_prompt_compiler.rb:140-146`](../api/app/services/assessments/system_prompt_compiler.rb#L140-L146)). The app sends the notes as `[COVERAGE_MAP]` (with an underscore) ([`map_injector.rb:42`](../api/app/services/coverage/map_injector.rb#L42)). So the "never read them aloud" rule may not apply to the real notes.
@@ -528,7 +528,18 @@ Connections drop in normal use: a candidate's Wi-Fi, a server restart during a d
 
 > **In plain words:** the interviewer is told "never read out the notes marked CONFIDENTIAL", but the notes are stamped "CONFIDENTIAL-NOTES", so the rule doesn't clearly apply. If they read one out anyway, the minutes are quietly edited so nobody finds out.
 
-**Tests written before the fix** ([`f27_hidden_notes_spec.rb`](../api/spec/services/f27_hidden_notes_spec.rb)): the notes must be sent under the tag the instructions name; a slip must be marked in the recruiter's transcript. The control: a normal answer is left unchanged.
+**Status: fixed.**
+- **Test first:** [`f27_hidden_notes_spec.rb`](../api/spec/services/f27_hidden_notes_spec.rb) was committed while 2 of its 3 examples failed. The fix made them pass, unchanged.
+  - A **contract check** reads the tag from the AI's real compiled instructions and compares it with what the app sends.
+  - A check that a slip is **marked** in the recruiter's transcript.
+  - The control, a normal answer left unchanged, passes throughout.
+- **The fix:**
+  - **The notes are sent under the tag the instructions name,** `[COVERAGE MAP]` ([`map_injector.rb:42-44`](../api/app/services/coverage/map_injector.rb#L42-L44)). Changing the sender rather than the instructions also fixes every assessment's already-stored instructions, with nothing to regenerate. The existing text filter already accepts both spellings.
+  - **A slip is recorded, not hidden** ([`audio_websocket_middleware.rb:283-294`](../api/app/channels/audio_websocket_middleware.rb#L283-L294)). When the filter removes internal notes from what the AI said, the recruiter's saved transcript says *"The interviewer read internal notes aloud here; they were removed from this transcript."*, and a warning is logged. The candidate's own live transcript still shows only the cleaned words.
+
+**What remains after the fix (disclosed, not hidden):**
+- **Audio can't be taken back.** If the AI still reads a note aloud, the candidate hears it. The fix removes the likely cause and makes any slip visible to the recruiter, but it can't prevent every slip, because the AI decides what to say.
+- **Not re-tested live yet.** Whether the AI still says the tag with the corrected name needs more real interviews; the free key's rate limit made long live tests slow.
 
 ---
 
@@ -570,7 +581,7 @@ The stored data is correct (the PDF export shows it), so this is P2. But for a "
 **What the spec says** (PRD-01 §5): confidence follows a fixed rule. For example, "high" means the skill was probed at least 3 times and reached `covered`.
 
 **What the code does:**
-- It asks the AI to apply the rule ([`generator.rb:97-100`](../api/app/services/portfolios/generator.rb#L97-L100)) and saves whatever it says ([`:162`](../api/app/services/portfolios/generator.rb#L162)).
+- It asks the AI to apply the rule ([`generator.rb:102-105`](../api/app/services/portfolios/generator.rb#L102-L105)) and saves whatever it says ([`:205`](../api/app/services/portfolios/generator.rb#L205)).
 - So the saved confidence can contradict the saved coverage data.
 - If the AI writes "High" with a capital H, the value fails validation and **the whole portfolio fails**.
 - The frontend already lowercases confidence defensively ([`ConfidenceIndicator.tsx:6`](../web/src/components/portfolio/ConfidenceIndicator.tsx#L6)), which suggests this has happened.
@@ -586,7 +597,7 @@ It becomes **P1 if it's seen happening**.
 **Why it matters:** the coverage map decides **when the interview ends** and what confidence each skill gets. If it's unreliable, interviews can end too early or too late.
 
 **What can go wrong:**
-- After each thing the candidate says, a background job updates the coverage map ([`audio_websocket_middleware.rb:187`](../api/app/channels/audio_websocket_middleware.rb#L187)). Up to 10 jobs run at once ([`sidekiq.yml:1`](../api/config/sidekiq.yml#L1)).
+- After each thing the candidate says, a background job updates the coverage map ([`audio_websocket_middleware.rb:193`](../api/app/channels/audio_websocket_middleware.rb#L193)). Up to 10 jobs run at once ([`sidekiq.yml:1`](../api/config/sidekiq.yml#L1)).
 - Two jobs for the same interview can both read "count = 2", both write "count = 3", and one update is lost ([`coverage_analyzer_worker.rb:39-49`](../api/app/workers/coverage_analyzer_worker.rb#L39-L49)).
 - Adding a newly discovered skill has the same problem ([`:53-63`](../api/app/workers/coverage_analyzer_worker.rb#L53-L63)).
 - There's also a rule that isn't in the spec: after 4 probes, a skill is automatically marked `covered`, even if the AI said the evidence isn't enough yet ([`:91-101`](../api/app/workers/coverage_analyzer_worker.rb#L91-L101)).
@@ -600,9 +611,9 @@ It becomes **P1 if it's seen happening**.
 **Why it matters:** the transcript is the evidence for the portfolio.
 
 **What can go wrong:**
-- Each connection numbers the lines itself, starting from the highest number saved so far ([`audio_websocket_middleware.rb:116`](../api/app/channels/audio_websocket_middleware.rb#L116)).
+- Each connection numbers the lines itself, starting from the highest number saved so far ([`audio_websocket_middleware.rb:121`](../api/app/channels/audio_websocket_middleware.rb#L121)).
 - After a refresh (the old connection stays alive for 120 seconds) or with a second tab, two connections can use the same line number.
-- The database rejects the duplicate, and the code **silently ignores** that error ([`:655-656`](../api/app/channels/audio_websocket_middleware.rb#L655-L656)). The line is lost.
+- The database rejects the duplicate, and the code **silently ignores** that error ([`:687-688`](../api/app/channels/audio_websocket_middleware.rb#L687-L688)). The line is lost.
 
 > **In plain words:** two people hand out ticket numbers from separate rolls. Duplicates get thrown in the bin without anyone being told.
 
@@ -623,7 +634,7 @@ It becomes **P1 if it's seen happening**.
 ### F15 — The "what to ask next" hint ignores discovered skills · P2 · CODE
 
 - The spec's priority order is `not_yet > initiated > partial > discovered > covered`. ("Discovered" = a skill the candidate brought up on their own.)
-- The code only ranks the configured skills and leaves out the "discovered" step ([`map_injector.rb:104-114`](../api/app/services/coverage/map_injector.rb#L104-L114)).
+- The code only ranks the configured skills and leaves out the "discovered" step ([`map_injector.rb:106-116`](../api/app/services/coverage/map_injector.rb#L106-L116)).
 
 ### F16 — Deployment files would set production up wrong · P2 · CODE
 

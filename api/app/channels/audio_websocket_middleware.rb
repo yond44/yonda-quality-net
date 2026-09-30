@@ -232,21 +232,26 @@ class AudioWebSocketMiddleware
     lambda { |text|
       next unless text.present?
 
+      # The recruiter's record keeps a marker when the AI read internal notes aloud; the
+      # candidate's page only gets the cleaned words (audit F27).
+      recruiter_text = recruiter_transcript_text(text)
       text = sanitize_output_transcription(text)
-      next unless text.present?
+      next unless recruiter_text.present?
 
       turn_number = state.increment_turn!
 
       Thread.new do
         ActiveRecord::Base.connection_pool.with_connection do
-          save_transcript_turn(session, turn_number, 'ai', text)
+          save_transcript_turn(session, turn_number, 'ai', recruiter_text)
         end
       rescue StandardError => e
         Rails.logger.error("[AudioWS] Thread crashed (output transcription): #{e.class}: #{e.message}")
       end
 
-      send_json(browser_ws, type: 'transcription', speaker: 'ai',
-                            text: text, turn_number: turn_number)
+      if text.present?
+        send_json(browser_ws, type: 'transcription', speaker: 'ai',
+                              text: text, turn_number: turn_number)
+      end
 
       # Track whether the AI's last turn ended with a question — drives wrap-up branching.
       state.last_ai_turn_ends_with_question = text.rstrip.end_with?('?')
@@ -275,6 +280,19 @@ class AudioWebSocketMiddleware
   end
 
   # Strips coverage/time metadata that leaks into output transcription via realtimeInput.text echoes.
+  INTERNAL_NOTES_MARKER = '[The interviewer read internal notes aloud here; they were removed from this transcript.]'
+
+  # What the recruiter's transcript records for an AI turn. The filter below strips
+  # echoed internal notes; when it strips anything the candidate may have heard them,
+  # so the record says so instead of hiding it (audit F27).
+  def recruiter_transcript_text(text)
+    clean = sanitize_output_transcription(text)
+    return clean if clean == text.strip
+
+    Rails.logger.warn('[AudioWS] AI read internal notes aloud — marked in the transcript')
+    [INTERNAL_NOTES_MARKER, clean].reject(&:blank?).join(' ')
+  end
+
   def sanitize_output_transcription(text)
     text = text.gsub(/\[COVERAGE[_ ]MAP\][\s\S]*?\[\/COVERAGE[_ ]MAP\]/m, '').strip
     text = text.gsub(/\[COVERAGE[_ ]MAP[^\]]*\]/m, '').strip
