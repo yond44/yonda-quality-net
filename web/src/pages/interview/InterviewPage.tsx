@@ -243,7 +243,12 @@ export default function InterviewPage() {
   }
 
   // ── Failure states: never shown as "complete" (audit F25) ───────────────
-  if (interviewState === "connection_lost" || interviewState === "load_error" || interviewState === "invalid_link") {
+  if (
+    interviewState === "connection_lost" ||
+    interviewState === "load_error" ||
+    interviewState === "invalid_link" ||
+    interviewState === "server_error"
+  ) {
     const message = {
       connection_lost: {
         title: "Connection lost",
@@ -259,6 +264,11 @@ export default function InterviewPage() {
         title: "This interview link isn't valid",
         body: "Check that you opened the full link from your invitation, or contact the hiring team.",
         action: null,
+      },
+      server_error: {
+        title: "Something went wrong",
+        body: "Your interview couldn't continue because of a problem on our side. It hasn't been recorded as complete. Try again, or contact the hiring team if it keeps happening.",
+        action: "Try again",
       },
     }[interviewState];
 
