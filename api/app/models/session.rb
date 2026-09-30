@@ -4,7 +4,8 @@ class Session < ApplicationRecord
   include TenantScoped
 
   STATUSES   = %w[pending active ended failed].freeze
-  END_REASONS = %w[manual_candidate manual_assessor all_covered time_ceiling error].freeze
+  # partial_coverage: ended before every skill was covered (audit F6).
+  END_REASONS = %w[manual_candidate manual_assessor all_covered partial_coverage time_ceiling error].freeze
 
   belongs_to :assessment
   has_many :transcript_turns, dependent: :destroy

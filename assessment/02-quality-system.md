@@ -143,7 +143,8 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 | **F4** removed skills stay in the database | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/2 failing | [36565150346](https://github.com/yond44/yonda-quality-net/actions/runs/36565150346) (F4 no longer flagged) | The edit endpoints treat the sent list as complete: skills left out of it are deleted in the same save |
 | **F5** an unreadable AI level is saved as L1 | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/3 failing; the new regeneration check: [36566738655](https://github.com/yond44/yonda-quality-net/actions/runs/36566738655) (3/4 failing) | [36568044569](https://github.com/yond44/yonda-quality-net/actions/runs/36568044569) (F5 no longer flagged) | The level is read strictly (3, "3", "L3") or generation fails loudly; all skills are checked first, then saved in one transaction |
 | **F25** a dropped connection looks like a finished interview; an abandoned one stays "Live" *(found in manual testing)* | [36660161292](https://github.com/yond44/yonda-quality-net/actions/runs/36660161292): 2 web + 2 API checks failing | [36660629180](https://github.com/yond44/yonda-quality-net/actions/runs/36660629180) (F25 no longer flagged; web check green) | Failures get their own screens (never "complete"); an interview more than 15 minutes past its time limit is ended as `error` when read |
-| **F6–F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 8 failing, 0 errors | *Task 3* | *Task 3* |
+| **F6** interviews recorded "all covered" without checking | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/3 failing | the `fix(F6)` commit's run | `all_covered` is checked where every ending is recorded (otherwise `partial_coverage`); a never-started interview can't be ended |
+| **F7–F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 6 failing, 0 errors | *Task 3* | *Task 3* |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
 
@@ -430,6 +431,36 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - **Ended when read, not by a timer:** there is no job scheduler in the project, and every place a recruiter or candidate could see a stale "Live" now checks first. Disclosed as a limitation.
   - **Reason `error`, not a new one:** the website already highlights `error` endings to the recruiter, so no new status was needed.
 - **Green:** [36660629180](https://github.com/yond44/yonda-quality-net/actions/runs/36660629180) (F25 no longer flagged; web check green).
+
+### F6: interviews were recorded as "all skills covered" without checking (P1)
+
+- **Red:** [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611), 2/3 failing.
+- **Root cause:** `all_covered` is a claim about the interview's data, but nothing checked it. `audio_complete` wrote it for any interview, even one that never started. And when the AI said a goodbye phrase early, the server **forced** "all covered", so a normal interview cut short was recorded as complete. Reproduced both ways: by calling the endpoint, and in a real interview (session 7), where the only skill was still `not_yet`.
+- **Files changed:**
+  - **Added:** [`20260930000000_add_partial_coverage_end_reason.rb`](../api/db/migrate/20260930000000_add_partial_coverage_end_reason.rb), the new `partial_coverage` end reason (a database enum value); [`schema.rb`](../api/db/schema.rb) regenerated
+  - [`session.rb:7-8`](../api/app/models/session.rb#L7-L8): the reason list
+  - [`end_handler.rb:27-30`](../api/app/services/sessions/end_handler.rb#L27-L30): the check, where every ending is recorded
+  - [`sessions_controller.rb:124-129`](../api/app/controllers/api/v1/sessions_controller.rb#L124-L129): a never-started interview is refused
+- **Before → after:**
+  ```ruby
+  # sessions_controller.rb, audio_complete
+  # BEFORE: any interview, started or not, is ended as "all covered"
+  Sessions::EndHandler.new(session).call(reason: 'all_covered')
+
+  # AFTER: only a running interview can finish
+  return json_error("Interview has not started", :conflict) unless session.active? && session.started_at
+  Sessions::EndHandler.new(session).call(reason: 'all_covered')
+
+  # end_handler.rb — NEW: "all covered" must be true, whoever claims it
+  reason = 'partial_coverage' if reason.to_s == 'all_covered' && !Coverage::MapInjector.new(@session).all_covered?
+  ```
+  In JavaScript terms: `if (reason === "all_covered" && !coverage.allCovered()) reason = "partial_coverage";`
+- **Why this way:**
+  - **The check sits where every ending is recorded,** not in one endpoint. That covers the endpoint, the AI's early goodbye and the server's own timeout, with one line.
+  - **It reuses the live interview's own "all covered" rule,** so there's a single definition of "covered".
+  - **The interview still always ends.** A code comment says an earlier coverage check in the endpoint stalled auto-end. Here only the recorded reason changes, never whether the interview ends.
+  - **A new reason instead of reusing one:** none of the existing reasons (`manual_candidate`, `manual_assessor`, `time_ceiling`, `error`) says "ended before every skill was covered". The website only special-cases `error`, so it shows the new reason like any normal ending.
+- **Green:** the `fix(F6)` commit's run.
 
 ## Assumptions
 

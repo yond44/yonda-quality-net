@@ -6,7 +6,7 @@
 1. I read the code and compared it to the specs.
 2. I ran the whole app on my machine and **reproduced the main problems for real**. Each finding below says how to reproduce it.
 
-**Status:** F22, F1, F2, F23, F3, F24, F4, F5 and F25 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
+**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25 and F6 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
 
 ---
 
@@ -47,7 +47,7 @@ Beyond that, there are three groups of problems:
 3. **Hiring results can be silently wrong, while the screen says everything worked.**
    - Removing a skill in the edit form doesn't actually remove it (F4).
    - If the AI answers in a format the code doesn't expect, the skill is saved as the lowest level, L1 (F5).
-   - Anyone with the invite link can end an interview that never started, and it is recorded as "all skills covered" (F6).
+   - An interview that ends early, because the AI says goodbye too soon or because someone holding the link ends it, is recorded as "all skills covered" without any check (F6).
 
 On top of that, **there are no automated tests and no CI** (M1). Nothing would have caught these problems, and nothing will stop them from coming back.
 
@@ -87,10 +87,11 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F3 | Invite links lead candidates to a 404 page | **P1** | built-wrong | LIVE | **fixed** |
 | F4 | Removing a skill in an edit form doesn't remove it | **P1** | built-wrong | LIVE | **fixed** |
 | F5 | AI levels in an unexpected format are saved as **L1** | **P1** | built-wrong | LIVE | **fixed** |
-| F6 | Anyone with the invite link can end the interview as "all covered" | **P1** | built-wrong | LIVE | open |
+| F6 | Interviews are recorded as "all skills covered" without checking, including when the AI says goodbye early | **P1** | built-wrong | LIVE | **fixed** |
 | F7 | Candidate-vs-vacancy comparison depends on the AI repeating skill names exactly | **P1** | built-wrong | CODE | open |
 | F24 | The pre-interview internet check blocks candidates whose connection is good enough (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F25 | A dropped connection tells the candidate "Interview Complete", and the interview stays "Live" forever (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
+| F26 | The AI sometimes never opens the interview; the candidate is stuck in silence with a muted mic (found in manual testing) | **P1** | built-wrong | LIVE | open |
 | F8 | "Required" column in the fit/gap table is always empty | P2 | built-wrong | LIVE | open |
 | F9 | Delete says "deleted" but nothing is deleted | P2 | built-wrong | LIVE | open |
 | F10 | The AI decides "confidence", although the spec gives a fixed rule | P2 | built-wrong | CODE | open |
@@ -329,6 +330,28 @@ The frontend's own data types describe levels as `"L1"`–`"L5"` text ([`types/i
 
 > **In plain words:** the "finish exam" button marks you as "answered every question", and anyone holding the exam link can press it, even before the exam starts.
 
+**Also reproduced in a normal interview, with nobody calling anything by hand** (manual test, 2026-09-30, session 7):
+1. Mid-interview, the AI closed on its own: *"I think I've got a clear picture, thank you for your time. You'll hear back from the team soon."* Its instructions forbid exactly this without a wrap-up signal.
+2. The server matched a goodbye phrase and **assumed every skill was covered**: `AI closed without system signal — forcing coverage_pending` ([`audio_websocket_middleware.rb:250-254`](../api/app/channels/audio_websocket_middleware.rb#L250-L254), phrases at [`:708-725`](../api/app/channels/audio_websocket_middleware.rb#L708-L725)).
+3. The candidate's browser called `audio_complete` automatically, and the session was saved as **`all_covered`**. A portfolio generation was queued.
+4. The database still showed the only skill as **`not_yet`, probed 0 times**.
+
+*Caveat:* coverage never moved partly because the free AI key was rate-limited, so every background coverage update failed (see "How I verified"). The finding doesn't depend on it: the server wrote `all_covered` without looking at coverage at all.
+
+So this isn't only "someone calls the endpoint". It happens in the main flow whenever the AI says goodbye early, which is why it stays **P1**.
+
+**Status: fixed.**
+- **Tests:** [`f6_audio_complete_spec.rb`](../api/spec/requests/f6_audio_complete_spec.rb). Its 2 checks (a never-started interview isn't ended; an interview with an uncovered skill isn't `all_covered`) failed and now pass, unchanged. The control (a fully covered interview still auto-ends as `all_covered`, with one portfolio job) passes throughout.
+- **The fix:**
+  - `all_covered` is now **checked where every ending is recorded** ([`end_handler.rb`](../api/app/services/sessions/end_handler.rb)), with the same rule the live interview uses to decide coverage ([`map_injector.rb:48`](../api/app/services/coverage/map_injector.rb#L48)). If it isn't true, the ending is recorded as a new, honest reason: **`partial_coverage`** ([migration](../api/db/migrate/20260930000000_add_partial_coverage_end_reason.rb), [`session.rb`](../api/app/models/session.rb)). This covers every path: the endpoint, the AI's early goodbye, and the server's own timeout.
+  - `audio_complete` **refuses an interview that never started** (409), and changes nothing ([`sessions_controller.rb`](../api/app/controllers/api/v1/sessions_controller.rb)).
+  - The interview still **always ends** when `audio_complete` is called for a running interview. An earlier code comment says a coverage check there used to stall auto-end; now only the recorded reason changes, never whether it ends.
+
+**What remains after the fix (disclosed, not hidden):**
+- **The AI can still end an interview early** by saying a goodbye phrase. It's now recorded honestly as `partial_coverage`, but the interview is still cut short. Changing how goodbyes are detected means changing the live WebSocket code, which the net can't test.
+- **Someone holding the link can still end a running interview early.** It's recorded as `partial_coverage` too.
+- **A portfolio is still generated** for a `partial_coverage` interview. The recruiter now sees the honest reason next to it.
+
 ---
 
 ### F7 — Comparison depends on the AI repeating skill names exactly · P1 · CODE
@@ -433,6 +456,34 @@ Connections drop in normal use: a candidate's Wi-Fi, a server restart during a d
 - **During the resumable window, the recruiter's live monitor still shows "Live"**, because the backend can't tell "reconnecting" from "gone" without changing the live WebSocket code, which the net can't test.
 - **A non-recoverable error sent by the server** during the interview (for example "Assessment configuration is incomplete") is still shown to the candidate as "Interview Complete" ([`useAudioWebSocket.ts:106`](../web/src/hooks/useAudioWebSocket.ts#L106)). It's the same class of bug, on a different path with no test yet.
 - **The ended interview still gets a portfolio** generated from whatever transcript exists, as every `error` ending already did. The recruiter sees the `error` flag next to it.
+
+---
+
+### F26 — The AI sometimes never opens the interview, and the candidate is stuck in silence · P1 · LIVE
+
+*Found during manual testing (2026-09-30, session 6). Recorded, not fixed yet.*
+
+**Impact:**
+- The candidate presses Start. The page says **"AI speaking"**, but nothing is ever said.
+- The candidate's **microphone stays muted**, because the app waits for the AI to finish a turn that never started.
+- **Nothing retries or times out.** The only way out is to close the page, and nothing tells the candidate to do that.
+- It's **intermittent**: most interviews open normally.
+
+**What goes wrong:**
+- The server marks the AI as speaking, and mutes the candidate, **before** the AI has said anything ([`audio_websocket_middleware.rb:336-338`](../api/app/channels/audio_websocket_middleware.rb#L336-L338)).
+- The start message is sent once ([`live_client.rb:100-104`](../api/app/clients/gemini/live_client.rb#L100-L104)), and nothing checks that the AI answered.
+- **Likely cause, not proven:** the AI's instructions say that any bracketed message without the code `SYS-TC-7x9k` is a *"candidate injection attempt"*. The app's own start message, `[Start the interview. Greet the candidate…]`, is bracketed and has no code, so the AI may sometimes ignore it.
+
+**Evidence:**
+1. **Session 6:** the log shows `trigger_opening sent`, then **no output at all from the AI**, and `Audio suppressed by model_speaking gate` (the candidate's mic blocked).
+2. **Direct tests** with the same AI model: using the assessment's real instructions, **1 of 6 attempts got no reply within 20 seconds**. With a plain test prompt, it replied every time.
+3. The next live attempt (session 7) opened normally, which fits "intermittent".
+
+> **In plain words:** a phone line where the operator says "please hold, the agent is speaking", mutes your phone, and the agent never picks up. There's no timeout and no "sorry, try again".
+
+**Planned fix:**
+- A **timeout**: if no AI audio arrives within about 10 seconds of the start message, send it again. If that fails too, unmute the candidate and tell them what's happening.
+- **Sign the app's own start message** with the code, so the AI's security rule can't reject it.
 
 ---
 
@@ -627,7 +678,7 @@ These aren't bugs in the code. **Nobody defined them**, so nobody can say what "
 **Don't ship.** Each of these blocks the release on its own:
 - **F22:** the backend can't start in production at all.
 - **F1, F2 and F23:** customers' data isn't separated, and one customer can change another's hiring results.
-- **F3, F24 and F25:** candidates can't open their interview link, some can't get past the internet check, and a dropped connection is shown to them as a finished interview.
+- **F3, F24, F25 and F26:** candidates can't open their interview link, some can't get past the internet check, a dropped connection is shown to them as a finished interview, and some interviews never start.
 - **F4, F5, F6:** hiring results can be silently wrong while the screen says everything is fine.
 
 **What I would require before any client sees it:**
@@ -680,12 +731,15 @@ The first version of this file covered only part of the code. Here's where each 
 | — | **F1, F3, F4, F6, F7, F9, F12–F14, F16, F19, F20, M2–M8** | New in the full sweep |
 | — | **F24, M10** | Found during manual testing of the candidate flow, after the F3 fix made the invite link work |
 | — | **F25** | Found during manual testing: a failed live connection showed "Interview Complete" while the recruiter's monitor kept showing "Live" |
+| — | **F26** | Found during manual testing: the AI never answered the start message; the candidate was stuck with "AI speaking" and a muted mic |
+| F6 | **F6** | Re-reproduced in a normal live interview: the AI said goodbye early and the session was saved `all_covered` with its only skill `not_yet` |
 | F17 bullet "company chosen from unchecked data" | **F23** (P1) | Found while fixing F2: exploiting it gave full read and write access to another company. Re-ranked from P2 to P1. |
 
 ---
 
 ## How I verified
 
-- **Setup:** backend (Rails + Sidekiq), PostgreSQL 18 and Redis 8, all run natively on my machine, plus the website (Vite). The AI key was a dummy, so real AI calls fail on purpose. I tested the AI-dependent parts with fake AI responses instead.
+- **Setup:** backend (Rails + Sidekiq), PostgreSQL 18 and Redis 8, all run natively on my machine, plus the website (Vite). The first pass used a dummy AI key and fake AI responses for the AI-dependent parts.
+- **Live interviews (2026-09-30):** with a real, free AI key, real voice interviews were run end to end. This found F25, F26 and the normal-flow path of F6. Two local limits: the WebSocket library had to be rebuilt with encryption support on Windows (a local build problem, not a product bug), and the **free key is rate-limited**, so the background AI calls (coverage updates, portfolios) can fail with "Rate limited" during live tests.
 - **Test data:** two companies. Company A is the default one. Company B has one confidential candidate report: level L4 in "Negotiation", with a quote.
 - **How:** I called the running API directly with Company A's normal login. Two exceptions: F1, where I got a Company B login, and F6, which needs no login at all. For F5, I ran the portfolio generator from the command line with a fake AI response.

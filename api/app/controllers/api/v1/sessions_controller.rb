@@ -121,9 +121,11 @@ module Api
 
         return json_response(ended: true, message: "Session already ended") if session.ended?
 
-        # No coverage re-check here. The backend WS already verified all_covered
-        # before sending preparing_to_end. Re-checking here caused false negatives
-        # (timing gap between WS detection and HTTP call) that stalled auto-end.
+        # Only an interview that actually ran can finish (audit F6).
+        return json_error("Interview has not started", :conflict) unless session.active? && session.started_at
+
+        # The interview always ends here, so auto-end never stalls. EndHandler checks the
+        # coverage and records "all_covered" only when it's true (audit F6).
         Sessions::EndHandler.new(session).call(reason: 'all_covered')
         json_response(ended: true, message: "Session ended")
       end

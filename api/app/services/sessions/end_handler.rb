@@ -25,6 +25,10 @@ module Sessions
 
       reason = 'manual_assessor' unless VALID_REASONS.include?(reason.to_s)
 
+      # "all_covered" is a claim about the interview's data, so it has to be true. The
+      # AI saying goodbye, or a call to audio_complete, is not proof (audit F6).
+      reason = 'partial_coverage' if reason.to_s == 'all_covered' && !Coverage::MapInjector.new(@session).all_covered?
+
       ActiveRecord::Base.transaction do
         duration = @session.started_at ? (ended_at - @session.started_at).to_i : nil
 
