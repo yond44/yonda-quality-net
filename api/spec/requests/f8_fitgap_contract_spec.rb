@@ -38,6 +38,17 @@ RSpec.describe 'F8: the fit/gap payload matches the fields the web app reads', t
     expect(fetch_comparison['required_level']).to eq(3)
   end
 
+  it 'fills the Required column for a report saved before the fix' do
+    old_report = FitGapReport.create!(portfolio:, vacancy:, generated_at: 1.day.ago, skill_comparisons: [
+      { 'skill_label' => 'Negotiation', 'candidate_level' => 4, 'expected_level' => 3, 'result' => 'exceed', 'delta' => 1 }
+    ])
+
+    get "/api/v1/portfolios/#{portfolio.id}/fitgap/#{vacancy.id}", headers: auth_headers(org)
+
+    expect(response.parsed_body.dig('report', 'id')).to eq(old_report.id)
+    expect(response.parsed_body.dig('report', 'skill_comparisons', 0, 'required_level')).to eq(3)
+  end
+
   it 'marks a comparison that uses a human override' do
     portfolio.portfolio_skills.first.create_assessor_override!(ai_level: 4, override_level: 3, overridden_by: 1)
 

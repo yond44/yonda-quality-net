@@ -162,7 +162,7 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 | **F7** results depend on the AI spelling skill names exactly | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 3/3 failing | [36665937396](https://github.com/yond44/yonda-quality-net/actions/runs/36665937396) (F7 no longer flagged) | Each skill gets a unique reference in the prompt; answers are mapped back through it and stored under the configured name; a missing skill fails loudly |
 | **F26** the AI never opens the interview; the candidate is stuck muted *(found in manual testing)* | [36665966050](https://github.com/yond44/yonda-quality-net/actions/runs/36665966050): 2/3 failing | [36665991784](https://github.com/yond44/yonda-quality-net/actions/runs/36665991784) (F26 no longer flagged) | A watchdog asks again after 10 s, then gives the turn back to the candidate; the start message is signed |
 | **F27** the AI reads its hidden notes aloud, and the record hides it *(found in manual testing)* | [36666018100](https://github.com/yond44/yonda-quality-net/actions/runs/36666018100): 2/3 failing | [36666047243](https://github.com/yond44/yonda-quality-net/actions/runs/36666047243) (F27 no longer flagged) | Notes are sent under the tag the AI is told to keep silent; a slip is marked in the recruiter's transcript |
-| **F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 3 failing, 0 errors | *Task 3* | *Task 3* |
+| **F8** "Required" column always empty | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 3/3 failing | the F8 pull request's run | The comparison also carries `required_level` and `is_override`; old reports get `required_level` filled in when read |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
 
@@ -593,6 +593,35 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - **A contract test, not a copy of the tag in the test.** The test reads the tag from the real compiled instructions, so if either side changes the tag again, CI goes red.
   - **Record the slip instead of hiding it.** The audio can't be taken back, so the honest option is to make it visible to the recruiter.
 - **Green:** [36666047243](https://github.com/yond44/yonda-quality-net/actions/runs/36666047243) (F27 no longer flagged).
+
+### F8: the "Required" column in the fit/gap table was always empty (P2)
+
+- **Red:** [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611), 3/3 failing.
+- **Root cause:** the backend sent the vacancy's level as `expected_level`, but the website reads `required_level` (and `is_override` for the ✏ marker). Nothing checked that the two sides agreed, so the page showed an empty cell with no error.
+- **Files changed:**
+  - [`engine.rb:62-66`](../api/app/services/fit_gap/engine.rb#L62-L66): the two fields the web reads
+  - [`portfolios_controller.rb:211-212`](../api/app/controllers/api/v1/portfolios_controller.rb#L211-L212): reports saved before the fix get `required_level` when read
+- **Before → after:**
+  ```ruby
+  # engine.rb — BEFORE
+  { skill_label: label, candidate_level: candidate_level, expected_level: expected_level, result: result, ... }
+
+  # AFTER: also the fields the web's TypeScript type requires
+  { skill_label: label, candidate_level: candidate_level,
+    required_level: expected_level,                                   # what the web reads
+    expected_level: expected_level,                                   # the PDF export and old reports
+    is_override: portfolio_skill.present? && portfolio_skill[:overridden],
+    result: result, ... }
+
+  # portfolios_controller.rb — reports saved before the fix
+  skill_comparisons: Array(report.skill_comparisons).map { |c| { 'required_level' => c['expected_level'] }.merge(c) }
+  ```
+- **Why this way:**
+  - **Add fields; don't rename them.** Nothing that works today changes: the PDF export and stored reports keep `expected_level`.
+  - **Fill in old reports when they're read,** so no data migration is needed.
+  - **The test's source of truth is the web's own type file,** so the next time one side renames a field, CI goes red before a user sees an empty column.
+- **Delivered as the pull request that shows the Definition-of-Ready gate passing:** spec linked, acceptance criteria in Given/When/Then, a design plan, and a test.
+- **Green:** the F8 pull request's run.
 
 ## Assumptions
 

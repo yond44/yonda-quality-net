@@ -208,7 +208,8 @@ module Api
           id:                report.id,
           portfolio_id:      report.portfolio_id,
           vacancy_id:        report.vacancy_id,
-          skill_comparisons: report.skill_comparisons,
+          # Reports stored before audit F8 have only expected_level; fill in the field the web reads.
+          skill_comparisons: Array(report.skill_comparisons).map { |c| { 'required_level' => c['expected_level'] }.merge(c) },
           culture_narrative: report.culture_narrative,
           overall_narrative: report.overall_narrative,
           generated_at:      report.generated_at
