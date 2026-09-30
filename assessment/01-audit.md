@@ -92,6 +92,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F24 | The pre-interview internet check blocks candidates whose connection is good enough (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F25 | A dropped connection tells the candidate "Interview Complete", and the interview stays "Live" forever (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F26 | The AI sometimes never opens the interview; the candidate is stuck in silence with a muted mic (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
+| F27 | The AI can read its hidden notes aloud, and the transcript hides it from the recruiter (found in manual testing) | P2 | built-wrong | LIVE + TEST | open |
 | F8 | "Required" column in the fit/gap table is always empty | P2 | built-wrong | LIVE | open |
 | F9 | Delete says "deleted" but nothing is deleted | P2 | built-wrong | LIVE | open |
 | F10 | The AI decides "confidence", although the spec gives a fixed rule | P2 | built-wrong | CODE | open |
@@ -506,6 +507,31 @@ Connections drop in normal use: a candidate's Wi-Fi, a server restart during a d
 
 ---
 
+### F27 — The AI can read its hidden notes aloud, and the transcript hides it from the recruiter · P2 · LIVE + TEST
+
+*Found during manual testing (2026-09-30, session 7).*
+
+**Impact:**
+- During the interview, the app sends the AI **hidden notes**: which skills are covered, and which one to ask about next. The AI's instructions say the candidate must not know which skills are being assessed.
+- If the AI reads those notes aloud, the **candidate hears internal assessment information**.
+- A text filter then removes such echoes from the saved transcript **without a trace** ([`audio_websocket_middleware.rb:278-289`](../api/app/channels/audio_websocket_middleware.rb#L278-L289)). So the **recruiter never learns** it happened, and the record doesn't match what the candidate heard.
+
+**What goes wrong:**
+- **The instructions describe a tag the AI never receives.** They say to keep silent any message that starts with `[COVERAGE MAP` (with a space) ([`system_prompt_compiler.rb:140-146`](../api/app/services/assessments/system_prompt_compiler.rb#L140-L146)). The app sends the notes as `[COVERAGE_MAP]` (with an underscore) ([`map_injector.rb:42`](../api/app/services/coverage/map_injector.rb#L42)). So the "never read them aloud" rule may not apply to the real notes.
+- **The text filter exists because this has happened before.** It has separate rules for echoed coverage tags, coverage JSON, time-control signals, pacing lines and the start message. But it can only clean the **text**; it can't take back **audio**, and it records nothing.
+
+**Evidence:**
+1. **Session 7 (live):** the AI's own speech transcription began a reply with **`[COVERAGE_MAP]`**. The saved transcript for that turn is clean, because the filter removed it. It's not confirmed whether the tag was audible.
+2. **A contract test** reads the tag from the AI's real instructions and compares it with what the app sends. It fails: `[COVERAGE_MAP]` doesn't start with `[COVERAGE MAP`.
+
+**Why P2, not P1 or P3:** the stored results (levels, coverage) are unaffected, so it's not P1. It's more than cosmetic, because it can reveal what's being assessed and the record hides it, so it's not P3.
+
+> **In plain words:** the interviewer is told "never read out the notes marked CONFIDENTIAL", but the notes are stamped "CONFIDENTIAL-NOTES", so the rule doesn't clearly apply. If they read one out anyway, the minutes are quietly edited so nobody finds out.
+
+**Tests written before the fix** ([`f27_hidden_notes_spec.rb`](../api/spec/services/f27_hidden_notes_spec.rb)): the notes must be sent under the tag the instructions name; a slip must be marked in the recruiter's transcript. The control: a normal answer is left unchanged.
+
+---
+
 ### F8 — "Required" column in the fit/gap table is always empty · P2 · LIVE
 
 **Impact:**
@@ -751,6 +777,7 @@ The first version of this file covered only part of the code. Here's where each 
 | — | **F24, M10** | Found during manual testing of the candidate flow, after the F3 fix made the invite link work |
 | — | **F25** | Found during manual testing: a failed live connection showed "Interview Complete" while the recruiter's monitor kept showing "Live" |
 | — | **F26** | Found during manual testing: the AI never answered the start message; the candidate was stuck with "AI speaking" and a muted mic |
+| — | **F27** | Found during manual testing: the AI's speech began with its hidden-notes tag; the instructions name a different tag than the app sends |
 | F6 | **F6** | Re-reproduced in a normal live interview: the AI said goodbye early and the session was saved `all_covered` with its only skill `not_yet` |
 | F17 bullet "company chosen from unchecked data" | **F23** (P1) | Found while fixing F2: exploiting it gave full read and write access to another company. Re-ranked from P2 to P1. |
 

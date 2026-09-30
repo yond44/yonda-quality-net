@@ -54,6 +54,7 @@ One spec file per **class of risk**, not a coverage percentage:
 | [`useAudioWebSocket.test.ts`](../web/src/hooks/useAudioWebSocket.test.ts) and [`InterviewPage.test.tsx`](../web/src/pages/interview/InterviewPage.test.tsx) | **F25** a failure is shown to the candidate as a finished interview | After a dropped connection, or when the page can't load, the candidate is never told "Interview Complete"; a real end still is |
 | [`f25_abandoned_session_spec.rb`](../api/spec/requests/f25_abandoned_session_spec.rb) | **F25** an abandoned interview stays "Live" forever | An interview long past its time limit isn't reported as live, to the recruiter or on the candidate's link; one within its limit stays resumable |
 | [`f26_opening_watchdog_spec.rb`](../api/spec/clients/f26_opening_watchdog_spec.rb) | **F26** the AI never opens the interview and the candidate is stuck muted | If the AI hasn't answered the start message in time it is asked again, then the turn goes back to the candidate; nothing happens once the AI talks |
+| [`f27_hidden_notes_spec.rb`](../api/spec/services/f27_hidden_notes_spec.rb) | **F27** the AI reads its hidden notes aloud, and the record hides it | The notes are sent under the tag the AI's instructions name (read from the real instructions); a slip is marked in the recruiter's transcript |
 | [`critical_path_spec.rb`](../api/spec/requests/critical_path_spec.rb) | **Regression on the main journey** | Log in → assessment → invite → candidate opens it; interview → portfolio → fit/gap |
 
 **Two design choices keep the net honest:**
