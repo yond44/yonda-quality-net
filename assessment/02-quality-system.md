@@ -130,6 +130,19 @@ A CI check only **blocks** a merge when GitHub is told it's required. This is a 
 
 ---
 
+## The gate in action: two pull requests
+
+The brief asks for the gate to be **shown working on real changes**, not just described. Two pull requests do that, and both stay visible:
+
+| Pull request | What it changes | What the gate says |
+|---|---|---|
+| **Blocked:** branch `demo/culture-fit-quick-fix` | A one-line "quick fix" to the fit/gap page's culture box. The PR template is left empty, and there's no test. | ❌ **Blocked on all four inputs:** no spec linked, no acceptance criteria, no design plan, and code changed without a test. |
+| **Passed:** branch `fix/f8-fitgap-required-level` | The F8 fix: the fit/gap payload carries the fields the web app reads. | ✅ **All four inputs present:** the audit finding as the spec, Given/When/Then criteria, a design plan, and a new test. The rest of CI is green too. |
+
+Before opening them, both descriptions were run through the gate's own code (`evaluate()` in [`definition-of-ready.mjs`](../.github/scripts/definition-of-ready.mjs)), with each branch's real list of changed files. The results were 4 of 4 blocked and 4 of 4 passed.
+
+**Why the blocked change is a good example:** it looks harmless, but it quietly makes a product decision (what should the page show when there's no culture assessment?) that nobody specified. That's the "ghost spec" the gate exists to stop. The blocked PR is left open and unmerged on purpose.
+
 ## Red → green log
 
 Every fix follows the same order: **a failing check is pushed first, then the fix**. Each is a separate commit with its own CI run, so the history shows the transition.
@@ -146,9 +159,9 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 | **F5** an unreadable AI level is saved as L1 | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/3 failing; the new regeneration check: [36566738655](https://github.com/yond44/yonda-quality-net/actions/runs/36566738655) (3/4 failing) | [36568044569](https://github.com/yond44/yonda-quality-net/actions/runs/36568044569) (F5 no longer flagged) | The level is read strictly (3, "3", "L3") or generation fails loudly; all skills are checked first, then saved in one transaction |
 | **F25** a dropped connection looks like a finished interview; an abandoned one stays "Live" *(found in manual testing)* | [36660161292](https://github.com/yond44/yonda-quality-net/actions/runs/36660161292): 2 web + 2 API checks failing | [36660629180](https://github.com/yond44/yonda-quality-net/actions/runs/36660629180) (F25 no longer flagged; web check green) | Failures get their own screens (never "complete"); an interview more than 15 minutes past its time limit is ended as `error` when read |
 | **F6** interviews recorded "all covered" without checking | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/3 failing | [36663487852](https://github.com/yond44/yonda-quality-net/actions/runs/36663487852) (F6 no longer flagged) | `all_covered` is checked where every ending is recorded (otherwise `partial_coverage`); a never-started interview can't be ended |
-| **F7** results depend on the AI spelling skill names exactly | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 3/3 failing | the `fix(F7)` commit's run | Each skill gets a unique reference in the prompt; answers are mapped back through it and stored under the configured name; a missing skill fails loudly |
-| **F26** the AI never opens the interview; the candidate is stuck muted *(found in manual testing)* | the `test(F26)` commit's run: 2/3 failing | the `fix(F26)` commit's run | A watchdog asks again after 10 s, then gives the turn back to the candidate; the start message is signed |
-| **F27** the AI reads its hidden notes aloud, and the record hides it *(found in manual testing)* | the `test(F27)` commit's run: 2/3 failing | the `fix(F27)` commit's run | Notes are sent under the tag the AI is told to keep silent; a slip is marked in the recruiter's transcript |
+| **F7** results depend on the AI spelling skill names exactly | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 3/3 failing | [36665937396](https://github.com/yond44/yonda-quality-net/actions/runs/36665937396) (F7 no longer flagged) | Each skill gets a unique reference in the prompt; answers are mapped back through it and stored under the configured name; a missing skill fails loudly |
+| **F26** the AI never opens the interview; the candidate is stuck muted *(found in manual testing)* | [36665966050](https://github.com/yond44/yonda-quality-net/actions/runs/36665966050): 2/3 failing | [36665991784](https://github.com/yond44/yonda-quality-net/actions/runs/36665991784) (F26 no longer flagged) | A watchdog asks again after 10 s, then gives the turn back to the candidate; the start message is signed |
+| **F27** the AI reads its hidden notes aloud, and the record hides it *(found in manual testing)* | [36666018100](https://github.com/yond44/yonda-quality-net/actions/runs/36666018100): 2/3 failing | [36666047243](https://github.com/yond44/yonda-quality-net/actions/runs/36666047243) (F27 no longer flagged) | Notes are sent under the tag the AI is told to keep silent; a slip is marked in the recruiter's transcript |
 | **F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 3 failing, 0 errors | *Task 3* | *Task 3* |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
@@ -499,11 +512,11 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - **A reference we control, not a name the AI controls.** The AI only has to copy a short code, which is far more reliable than reproducing a long name exactly, and nothing depends on its wording any more.
   - **Row IDs, not catalogue IDs:** custom skills have no catalogue ID, and every skill has a row ID.
   - **Fail loudly on a missing skill:** a silently missing skill looks like "not assessed" to the recruiter, which is wrong data. A visible failure retries and can be regenerated.
-- **Green:** the `fix(F7)` commit's run.
+- **Green:** [36665937396](https://github.com/yond44/yonda-quality-net/actions/runs/36665937396) (F7 no longer flagged).
 
 ### F26: the AI sometimes never opened the interview, and the candidate was stuck muted (P1, found in manual testing)
 
-- **Red:** the `test(F26)` commit's run, 2/3 failing.
+- **Red:** [36665966050](https://github.com/yond44/yonda-quality-net/actions/runs/36665966050), 2/3 failing.
 - **Root cause:** the server asked the AI to open the interview **once**, and treated the AI as speaking (with the candidate's microphone muted) until it answered. Nothing checked that an answer ever came. When it didn't, the interview hung forever. The start message was also bracketed but unsigned, which the AI's own instructions describe as an injection attempt.
 - **Files changed:**
   - [`live_client.rb:14-19`](../api/app/clients/gemini/live_client.rb#L14-L19): the timeout, the number of tries, and the default text
@@ -546,11 +559,11 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - **A watchdog, not only a better message.** The real cause isn't proven, and an AI can stay silent for other reasons too (an outage, a slow start). A timeout protects the candidate whatever the cause.
   - **Retry once, then hand over.** A second try covers a one-off miss; giving the candidate the turn after that lets their voice restart the conversation, instead of making them wait longer.
   - **The check sits in the AI client,** where the AI's first audio is seen, so it can be tested without a live connection.
-- **Green:** the `fix(F26)` commit's run.
+- **Green:** [36665991784](https://github.com/yond44/yonda-quality-net/actions/runs/36665991784) (F26 no longer flagged).
 
 ### F27: the AI could read its hidden notes aloud, and the transcript hid it (P2, found in manual testing)
 
-- **Red:** the `test(F27)` commit's run, 2/3 failing.
+- **Red:** [36666018100](https://github.com/yond44/yonda-quality-net/actions/runs/36666018100), 2/3 failing.
 - **Root cause:** two mismatches.
   - The AI's instructions say to keep silent any message that starts with `[COVERAGE MAP`, but the app sent its notes as `[COVERAGE_MAP]`, so the rule described a tag the AI never received.
   - A text filter then removed any echo of the notes from the transcript **without a trace**, so the recruiter couldn't know the candidate might have heard them.
@@ -579,7 +592,7 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - **Fix the sender, not the instructions.** Every assessment stores its compiled instructions. Changing the tag the app sends makes all of them correct at once; changing the wording would only reach assessments that are recompiled.
   - **A contract test, not a copy of the tag in the test.** The test reads the tag from the real compiled instructions, so if either side changes the tag again, CI goes red.
   - **Record the slip instead of hiding it.** The audio can't be taken back, so the honest option is to make it visible to the recruiter.
-- **Green:** the `fix(F27)` commit's run.
+- **Green:** [36666047243](https://github.com/yond44/yonda-quality-net/actions/runs/36666047243) (F27 no longer flagged).
 
 ## Assumptions
 

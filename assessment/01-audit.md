@@ -731,6 +731,8 @@ These aren't bugs in the code. **Nobody defined them**, so nobody can say what "
 
 ## Ship or don't ship
 
+*This section is the assessment as first written, before any fixes. Each finding's current state is in the Status column of the ranked list at the top. The release decision for the fixed version is written separately in Task 4 (`03-release-decision.md`).*
+
 **Don't ship.** Each of these blocks the release on its own:
 - **F22:** the backend can't start in production at all.
 - **F1, F2 and F23:** customers' data isn't separated, and one customer can change another's hiring results.
