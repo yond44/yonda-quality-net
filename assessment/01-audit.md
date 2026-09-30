@@ -6,7 +6,7 @@
 1. I read the code and compared it to the specs.
 2. I ran the whole app on my machine and **reproduced the main problems for real**. Each finding below says how to reproduce it.
 
-**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25, F6 and F7 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
+**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25, F6, F7 and F26 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
 
 ---
 
@@ -91,7 +91,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F7 | Candidate-vs-vacancy comparison depends on the AI repeating skill names exactly | **P1** | built-wrong | TEST | **fixed** |
 | F24 | The pre-interview internet check blocks candidates whose connection is good enough (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F25 | A dropped connection tells the candidate "Interview Complete", and the interview stays "Live" forever (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
-| F26 | The AI sometimes never opens the interview; the candidate is stuck in silence with a muted mic (found in manual testing) | **P1** | built-wrong | LIVE | open |
+| F26 | The AI sometimes never opens the interview; the candidate is stuck in silence with a muted mic (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F8 | "Required" column in the fit/gap table is always empty | P2 | built-wrong | LIVE | open |
 | F9 | Delete says "deleted" but nothing is deleted | P2 | built-wrong | LIVE | open |
 | F10 | The AI decides "confidence", although the spec gives a fixed rule | P2 | built-wrong | CODE | open |
@@ -473,7 +473,7 @@ Connections drop in normal use: a candidate's Wi-Fi, a server restart during a d
 
 ### F26 — The AI sometimes never opens the interview, and the candidate is stuck in silence · P1 · LIVE
 
-*Found during manual testing (2026-09-30, session 6). Recorded, not fixed yet.*
+*Found during manual testing (2026-09-30, session 6).*
 
 **Impact:**
 - The candidate presses Start. The page says **"AI speaking"**, but nothing is ever said.
@@ -493,9 +493,16 @@ Connections drop in normal use: a candidate's Wi-Fi, a server restart during a d
 
 > **In plain words:** a phone line where the operator says "please hold, the agent is speaking", mutes your phone, and the agent never picks up. There's no timeout and no "sorry, try again".
 
-**Planned fix:**
-- A **timeout**: if no AI audio arrives within about 10 seconds of the start message, send it again. If that fails too, unmute the candidate and tell them what's happening.
-- **Sign the app's own start message** with the code, so the AI's security rule can't reject it.
+**Status: fixed.**
+- **Test first:** [`f26_opening_watchdog_spec.rb`](../api/spec/clients/f26_opening_watchdog_spec.rb) drives the real AI client through a fake connection, and fires its timers directly instead of waiting. It was committed while 2 of its 3 examples failed. The fix made them pass, unchanged. The control (nothing happens once the AI starts talking) passes throughout.
+- **The fix:**
+  - **A watchdog on the opening** ([`live_client.rb`](../api/app/clients/gemini/live_client.rb)). If the AI's first audio hasn't arrived **10 seconds** after the start message, the message is sent again. If the second try also goes unanswered, the client reports it.
+  - **The turn goes back to the candidate** when that happens ([`audio_websocket_middleware.rb`](../api/app/channels/audio_websocket_middleware.rb), `handle_opening_unanswered`). The server stops treating the AI as speaking and unmutes the candidate, so their first words restart the conversation.
+  - **The start message is signed** with the same code as the other system signals, so the AI's own security rule can't take it for an injection attempt. With the assessment's real instructions, the real AI answered the signed message **6 times out of 6**; the unsigned one answered 5 of 6. That's too small a sample to prove the signing helps, so the watchdog is what guarantees the candidate isn't stuck.
+
+**What remains after the fix (disclosed, not hidden):**
+- **The page doesn't explain the delay.** After about 20 seconds of silence, the candidate's mic opens, but nothing on screen says "say hello to begin". Most people will speak, but it's not guaranteed.
+- **The server-side part runs in the live WebSocket code, which the net can't test.** Only the client's watchdog is covered by a test; unmuting the candidate is checked by reading the code.
 
 ---
 

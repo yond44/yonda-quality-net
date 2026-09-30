@@ -20,6 +20,11 @@ class AudioWebSocketMiddleware
                    ' Acknowledge their last answer in one sentence, then say goodbye in one sentence.' \
                    ' Two sentences total, then stop.'
 
+  # Signed like the other system signals: the AI's instructions treat an unsigned
+  # bracketed message as a candidate injection attempt and may ignore it (audit F26).
+  OPENING_SIGNAL = "[TIME CONTROL:#{SYSTEM_SIGNAL_TOKEN}] { \"start_interview\": true }" \
+                   ' — Begin the interview now: greet the candidate briefly and ask your first question.'
+
   def initialize(app)
     @app = app
   end
@@ -146,7 +151,8 @@ class AudioWebSocketMiddleware
       on_close: ->(code:, reason:) { handle_gemini_close(browser_ws, state, code: code, reason: reason) },
       on_error: ->(message) { Rails.logger.error("[AudioWS] Gemini error: session=#{session.id} #{message}") },
       on_resumption_token_update: build_on_resumption_token_update(state, session),
-      on_ready: build_on_ready(browser_ws, state, session)
+      on_ready: build_on_ready(browser_ws, state, session),
+      on_opening_unanswered: -> { handle_opening_unanswered(browser_ws, state, session) }
     )
   end
 
@@ -335,7 +341,7 @@ class AudioWebSocketMiddleware
         unless session.gemini_resumption_token.present?
           state.model_speaking = true
           send_json(browser_ws, type: 'speaker_changed', speaker: 'ai')
-          state.gemini_client.trigger_opening
+          state.gemini_client.trigger_opening(OPENING_SIGNAL)
         end
         send_json(browser_ws, type: 'session_started', session_id: session.id)
       end
@@ -345,6 +351,14 @@ class AudioWebSocketMiddleware
   end
 
   # Handles Gemini GoAway — transparent reconnection using resumption token, audio buffered for replay.
+  # The AI never answered the opening, even when asked twice (audit F26). Stop treating
+  # it as speaking and give the candidate the turn: their voice restarts the conversation.
+  def handle_opening_unanswered(browser_ws, state, session)
+    Rails.logger.warn("[AudioWS] AI never answered the opening — giving the candidate the turn (session=#{session.id})")
+    state.model_speaking = false
+    send_json(browser_ws, type: 'speaker_changed', speaker: 'candidate')
+  end
+
   def handle_go_away(browser_ws, state, resumption_token)
     session = state.session
     return unless resumption_token.present?

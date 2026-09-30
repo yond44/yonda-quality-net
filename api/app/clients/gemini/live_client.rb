@@ -12,6 +12,12 @@ module Gemini
     INACTIVITY_TIMEOUT = 30 # reconnect if Gemini produces no meaningful response
     GATE_OPEN_DELAY    = 0.8 # delay opening mic gate so frontend audio buffer drains and avoids echo loop
 
+    # The AI sometimes never answers the opening (audit F26). Wait this long for its first
+    # audio, ask again once, then report it so the caller can give the candidate the turn.
+    OPENING_REPLY_TIMEOUT = 10
+    OPENING_ATTEMPTS      = 2
+    DEFAULT_OPENING_TEXT  = '[Start the interview. Greet the candidate and ask your first question.]'
+
     # Silence pump: synthetic silent PCM frames sent during browser silence so Gemini's VAD detects end-of-speech.
     SILENCE_PUMP_DELAY    = 1
     SILENCE_PUMP_INTERVAL = 0.03
@@ -33,7 +39,8 @@ module Gemini
       on_close: nil,
       on_error: nil,
       on_ready: nil,
-      on_resumption_token_update: nil
+      on_resumption_token_update: nil,
+      on_opening_unanswered: nil
     )
       @system_prompt = system_prompt
       @api_key = api_key || ENV.fetch('GEMINI_API_KEY')
@@ -58,6 +65,7 @@ module Gemini
       @on_error = on_error
       @on_ready = on_ready
       @on_resumption_token_update = on_resumption_token_update
+      @on_opening_unanswered = on_opening_unanswered
     end
 
     # Opens the WebSocket and sends setup; resumes a prior session if a handle is provided.
@@ -96,12 +104,14 @@ module Gemini
       true
     end
 
-    # Prompts Gemini to speak first via realtimeInput.text.
-    def trigger_opening
+    # Prompts Gemini to speak first via realtimeInput.text, and watches for its answer:
+    # an unanswered opening is sent again, then reported (audit F26).
+    def trigger_opening(text = DEFAULT_OPENING_TEXT)
       return unless @connected && @ws
 
-      @ws.send({ realtimeInput: { text: '[Start the interview. Greet the candidate and ask your first question.]' } }.to_json)
-      Rails.logger.info('[Gemini::LiveClient] trigger_opening sent')
+      @opening_text = text
+      @opening_attempts = 0
+      send_opening
     end
 
     # True when this client is ready to accept audio frames.
@@ -115,6 +125,7 @@ module Gemini
 
     # Gracefully closes the connection.
     def close
+      @opening_timer&.cancel
       @inactivity_timer&.cancel
       @gate_timer&.cancel
       stop_silence_pump
@@ -125,12 +136,42 @@ module Gemini
     # Silences callbacks before this client is replaced on GoAway reconnect, preventing event bleed.
     def supersede!
       @superseded = true
+      @opening_timer&.cancel
       @inactivity_timer&.cancel
       @gate_timer&.cancel
       stop_silence_pump
     end
 
     private
+
+    def send_opening
+      @opening_attempts += 1
+      @opening_pending = true
+      @ws.send({ realtimeInput: { text: @opening_text } }.to_json)
+      Rails.logger.info("[Gemini::LiveClient] trigger_opening sent (attempt #{@opening_attempts})")
+
+      @opening_timer = EM::Timer.new(OPENING_REPLY_TIMEOUT) { check_opening_answered }
+    end
+
+    def check_opening_answered
+      return unless @opening_pending && @connected && !@superseded
+
+      if @opening_attempts < OPENING_ATTEMPTS
+        Rails.logger.warn('[Gemini::LiveClient] No answer to the opening — asking again')
+        send_opening
+      else
+        @opening_pending = false
+        Rails.logger.warn('[Gemini::LiveClient] Opening never answered — handing the turn to the candidate')
+        @on_opening_unanswered&.call
+      end
+    end
+
+    def opening_answered!
+      return unless @opening_pending
+
+      @opening_pending = false
+      @opening_timer&.cancel
+    end
 
     def handle_ws_open(resumption_handle)
       send_setup(resumption_handle: resumption_handle)
@@ -362,6 +403,7 @@ module Gemini
       parts.each do |part|
         next unless (inline = part['inlineData'])
 
+        opening_answered!
         stop_silence_pump unless @model_emitting_audio
         @model_emitting_audio = true
         audio_bytes = Base64.strict_decode64(inline['data'])

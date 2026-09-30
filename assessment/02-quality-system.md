@@ -146,6 +146,7 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 | **F25** a dropped connection looks like a finished interview; an abandoned one stays "Live" *(found in manual testing)* | [36660161292](https://github.com/yond44/yonda-quality-net/actions/runs/36660161292): 2 web + 2 API checks failing | [36660629180](https://github.com/yond44/yonda-quality-net/actions/runs/36660629180) (F25 no longer flagged; web check green) | Failures get their own screens (never "complete"); an interview more than 15 minutes past its time limit is ended as `error` when read |
 | **F6** interviews recorded "all covered" without checking | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/3 failing | [36663487852](https://github.com/yond44/yonda-quality-net/actions/runs/36663487852) (F6 no longer flagged) | `all_covered` is checked where every ending is recorded (otherwise `partial_coverage`); a never-started interview can't be ended |
 | **F7** results depend on the AI spelling skill names exactly | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 3/3 failing | the `fix(F7)` commit's run | Each skill gets a unique reference in the prompt; answers are mapped back through it and stored under the configured name; a missing skill fails loudly |
+| **F26** the AI never opens the interview; the candidate is stuck muted *(found in manual testing)* | the `test(F26)` commit's run: 2/3 failing | the `fix(F26)` commit's run | A watchdog asks again after 10 s, then gives the turn back to the candidate; the start message is signed |
 | **F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 3 failing, 0 errors | *Task 3* | *Task 3* |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
@@ -497,6 +498,53 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - **Row IDs, not catalogue IDs:** custom skills have no catalogue ID, and every skill has a row ID.
   - **Fail loudly on a missing skill:** a silently missing skill looks like "not assessed" to the recruiter, which is wrong data. A visible failure retries and can be regenerated.
 - **Green:** the `fix(F7)` commit's run.
+
+### F26: the AI sometimes never opened the interview, and the candidate was stuck muted (P1, found in manual testing)
+
+- **Red:** the `test(F26)` commit's run, 2/3 failing.
+- **Root cause:** the server asked the AI to open the interview **once**, and treated the AI as speaking (with the candidate's microphone muted) until it answered. Nothing checked that an answer ever came. When it didn't, the interview hung forever. The start message was also bracketed but unsigned, which the AI's own instructions describe as an injection attempt.
+- **Files changed:**
+  - [`live_client.rb:14-19`](../api/app/clients/gemini/live_client.rb#L14-L19): the timeout, the number of tries, and the default text
+  - [`live_client.rb:43`](../api/app/clients/gemini/live_client.rb#L43): a new `on_opening_unanswered` callback
+  - [`live_client.rb:107-115`](../api/app/clients/gemini/live_client.rb#L107-L115): `trigger_opening` starts the watchdog
+  - [`live_client.rb:147-174`](../api/app/clients/gemini/live_client.rb#L147-L174): `send_opening`, `check_opening_answered` and `opening_answered!`
+  - [`live_client.rb:406`](../api/app/clients/gemini/live_client.rb#L406): the AI's first audio marks the opening as answered
+  - [`live_client.rb:128`](../api/app/clients/gemini/live_client.rb#L128) and [`:139`](../api/app/clients/gemini/live_client.rb#L139): the watchdog stops when the client closes
+  - [`audio_websocket_middleware.rb:23-26`](../api/app/channels/audio_websocket_middleware.rb#L23-L26): the signed start message
+  - [`audio_websocket_middleware.rb:155`](../api/app/channels/audio_websocket_middleware.rb#L155), [`:344`](../api/app/channels/audio_websocket_middleware.rb#L344) and [`:354-360`](../api/app/channels/audio_websocket_middleware.rb#L354-L360): the signed message is used, and the turn is given back
+- **Before → after:**
+  ```ruby
+  # live_client.rb — BEFORE: sent once, never checked
+  def trigger_opening
+    @ws.send({ realtimeInput: { text: '[Start the interview. ...]' } }.to_json)
+  end
+
+  # AFTER: sent, watched, sent again, then reported
+  def send_opening
+    @opening_attempts += 1
+    @opening_pending = true
+    @ws.send({ realtimeInput: { text: @opening_text } }.to_json)
+    @opening_timer = EM::Timer.new(OPENING_REPLY_TIMEOUT) { check_opening_answered }
+  end
+
+  def check_opening_answered
+    return unless @opening_pending && @connected && !@superseded
+    if @opening_attempts < OPENING_ATTEMPTS then send_opening          # ask again
+    else @opening_pending = false; @on_opening_unanswered&.call end    # give up, report it
+  end
+
+  # audio_websocket_middleware.rb — NEW: give the candidate the turn
+  def handle_opening_unanswered(browser_ws, state, session)
+    state.model_speaking = false
+    send_json(browser_ws, type: 'speaker_changed', speaker: 'candidate')
+  end
+  ```
+  In JavaScript terms: `send(start); timer = setTimeout(() => answered ? null : (tries < 2 ? send(start) : giveTurnToCandidate()), 10_000)`.
+- **Why this way:**
+  - **A watchdog, not only a better message.** The real cause isn't proven, and an AI can stay silent for other reasons too (an outage, a slow start). A timeout protects the candidate whatever the cause.
+  - **Retry once, then hand over.** A second try covers a one-off miss; giving the candidate the turn after that lets their voice restart the conversation, instead of making them wait longer.
+  - **The check sits in the AI client,** where the AI's first audio is seen, so it can be tested without a live connection.
+- **Green:** the `fix(F26)` commit's run.
 
 ## Assumptions
 
