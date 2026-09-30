@@ -51,6 +51,8 @@ One spec file per **class of risk**, not a coverage percentage:
 | [`f7_skill_identity_spec.rb`](../api/spec/services/f7_skill_identity_spec.rb) | **F7** skills keyed on the AI's wording | Skills stay tied to the configuration, and a dropped skill fails loudly |
 | [`f8_fitgap_contract_spec.rb`](../api/spec/requests/f8_fitgap_contract_spec.rb) | **F8** web ↔ API contract | The payload has every field the **web's own TypeScript type** requires |
 | [`internetSpeedTest.test.ts`](../web/src/utils/internetSpeedTest.test.ts) | **F24** the internet check blocks good connections | The real check, run on a simulated network, passes the reported connection, measures against our own backend, one thing at a time, and never passes when it couldn't measure |
+| [`useAudioWebSocket.test.ts`](../web/src/hooks/useAudioWebSocket.test.ts) and [`InterviewPage.test.tsx`](../web/src/pages/interview/InterviewPage.test.tsx) | **F25** a failure is shown to the candidate as a finished interview | After a dropped connection, or when the page can't load, the candidate is never told "Interview Complete"; a real end still is |
+| [`f25_abandoned_session_spec.rb`](../api/spec/requests/f25_abandoned_session_spec.rb) | **F25** an abandoned interview stays "Live" forever | An interview long past its time limit isn't reported as live, to the recruiter or on the candidate's link; one within its limit stays resumable |
 | [`critical_path_spec.rb`](../api/spec/requests/critical_path_spec.rb) | **Regression on the main journey** | Log in → assessment → invite → candidate opens it; interview → portfolio → fit/gap |
 
 **Two design choices keep the net honest:**
@@ -69,7 +71,7 @@ Knowing the gaps is part of the system. These are known and accepted for now:
 |---|---|---|
 | **Real AI behaviour** (question quality, probing, rating accuracy) | Tests use fake models, so they're deterministic and free | The AI could interview badly and no check would notice. That needs a separate evaluation set against the spec, not unit tests. |
 | **The live voice interview** (WebSocket audio, reconnects, timing) | Needs a real browser, audio and Gemini Live | Races **F11** (coverage updates) and **F12** (lost transcript lines) are untested |
-| **Frontend screens** | Web tests (Vitest) cover logic such as the internet check (F24), but no test renders a page or clicks through it | **F21** (error states) and the web side of F4 are untested. The build passes even if a page shows wrong data. |
+| **Frontend screens** | Web tests (Vitest, with a simulated browser) cover the internet check (F24), the interview connection and the interview page's load and end states (F25). Most other pages are not rendered by any test | **F21** (error states) and the web side of F4 are untested. The build passes even if a page shows wrong data. |
 | **P2/P3 findings** other than F8 | Time goes to P0/P1 first, as the brief allows | F9–F21 have no checks yet (listed as open in the audit) |
 | **Production configuration beyond boot** | The boot check uses dummy secrets | **F16**: the real deployment files still lack secrets and pin `:latest` images |
 | **Quality of a PR's inputs** | The gate checks the inputs **exist and have the right shape**, not whether they're **good** | A vague spec or a weak test can still pass. Human review is still needed. The gate removes "forgot the spec", not bad judgment. |

@@ -90,6 +90,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F6 | Anyone with the invite link can end the interview as "all covered" | **P1** | built-wrong | LIVE | open |
 | F7 | Candidate-vs-vacancy comparison depends on the AI repeating skill names exactly | **P1** | built-wrong | CODE | open |
 | F24 | The pre-interview internet check blocks candidates whose connection is good enough (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
+| F25 | A dropped connection tells the candidate "Interview Complete", and the interview stays "Live" forever (found in manual testing) | **P1** | built-wrong | LIVE | open |
 | F8 | "Required" column in the fit/gap table is always empty | P2 | built-wrong | LIVE | open |
 | F9 | Delete says "deleted" but nothing is deleted | P2 | built-wrong | LIVE | open |
 | F10 | The AI decides "confidence", although the spec gives a fixed rule | P2 | built-wrong | CODE | open |
@@ -389,6 +390,42 @@ The frontend's own data types describe levels as `"L1"`–`"L5"` text ([`types/i
 
 ---
 
+### F25 — A dropped connection is shown as "Interview Complete", and the interview stays "Live" forever · P1 · LIVE
+
+*Found during manual testing of the candidate flow.*
+
+**Impact:**
+- **The candidate is told the interview succeeded when it failed.** After a dropped connection, the page says *"Interview Complete. The interview has been recorded. The hiring team will review your results."* Nothing was recorded. The candidate leaves, and never knows they should reopen the link.
+- **The recruiter sees the interview as "Live" forever.** The backend is never told the interview was abandoned, so it stays `active`: no end, no portfolio, no result. Nothing ever cleans it up.
+- **Any error loading the interview page also shows "Interview Complete"**, for example a server restart, a network error or a rate limit. The candidate can't tell "done" from "broken".
+
+Connections drop in normal use: a candidate's Wi-Fi, a server restart during a deploy, an outage at the AI provider. So this is the main flow, not an edge case.
+
+**What goes wrong:**
+- **The reconnect loop gives up with "complete".** The page retries after 1, 2 and 4 seconds, then reports the interview as complete ([`useAudioWebSocket.ts:119-130`](../web/src/hooks/useAudioWebSocket.ts#L119-L130)).
+- **Load errors are shown as "complete".** If the interview info can't be loaded, the page switches to the "Interview Complete" screen ([`InterviewPage.tsx:51`](../web/src/pages/interview/InterviewPage.tsx#L51)).
+- **Nothing ends an abandoned interview.** The time-limit check only runs while the live connection is open ([`audio_websocket_middleware.rb`](../api/app/channels/audio_websocket_middleware.rb), `check_time_ceiling`). Once the candidate is gone, the session stays `active` with no end.
+
+**How it was reproduced** (manual test on the running app):
+1. Start an interview from an invite link.
+2. The live connection fails. Locally this was triggered by the API process crashing when it connected to the AI (a Windows-only build problem with the WebSocket library, not a product bug). In production the same path is taken by any dropped connection.
+3. The page shows "reconnecting" for about 7 seconds, then **"Interview Complete"**.
+4. The recruiter's live monitor still shows the interview as **Live**, with coverage "Not Yet" and no transcript. In the database the session is still `active`, hours later.
+5. Reopening the link while the API was down also showed **"Interview Complete"**.
+
+> **In plain words:** when the phone line drops, the app tells the caller "thanks, your call has been recorded" and hangs up, while the office's switchboard shows the call as still in progress, forever.
+
+**Planned fix:**
+- **Web:** after the reconnects run out, say *"Connection lost. Reopen your link to continue"*, not "complete". When the page can't load, show an error with Retry.
+- **Backend:** an interview still `active` well past its time limit can't really be live, so it's ended with an honest reason when it's read. An interruption **within** the time limit stays resumable: the candidate can reopen the link and continue.
+
+**Tests written before the fix** (they fail on the current code):
+- [`useAudioWebSocket.test.ts`](../web/src/hooks/useAudioWebSocket.test.ts): the candidate is never told "complete" after a lost connection. The control: a real end from the server still shows "complete".
+- [`InterviewPage.test.tsx`](../web/src/pages/interview/InterviewPage.test.tsx): a page that can't load isn't shown as "Interview Complete". The control: an ended interview still is.
+- [`f25_abandoned_session_spec.rb`](../api/spec/requests/f25_abandoned_session_spec.rb): an interview still `active` long after its time limit isn't reported as live, to the recruiter or on the candidate's link. The control: an interview within its time limit stays live.
+
+---
+
 ### F8 — "Required" column in the fit/gap table is always empty · P2 · LIVE
 
 **Impact:**
@@ -569,7 +606,7 @@ These aren't bugs in the code. **Nobody defined them**, so nobody can say what "
 
    The AI border is the more dangerous one.
    *Fix:* tests that check the backend's response shape, and strict checks on AI output that **fail loudly** instead of silently guessing.
-3. **Success is shown without checking the result.** A save that doesn't save (F4), a delete that doesn't delete (F9), and "all covered" when nothing was covered (F6). The screen looks fine while the data is wrong, which is exactly what the brief's quality bar warns about.
+3. **Success is shown without checking the result.** A save that doesn't save (F4), a delete that doesn't delete (F9), "all covered" when nothing was covered (F6), and "Interview Complete" after a dropped connection (F25). Failures are also swallowed into normal-looking screens (F21, F25). The screen looks fine while the data is wrong, which is exactly what the brief's quality bar warns about.
 4. **Timing bugs fixed one at a time, without tests.** Code comments mention earlier race-condition fixes ("H1", "H4", "H5", "C2"), but the same patterns are still there (F11, F12), and no test locks the behaviour in.
 5. **The specs fell behind the code.** The code changed (M3, M4), but the specs were never updated, so there's no reliable source of truth. That's the "ghost spec" problem the brief describes.
 
@@ -580,7 +617,7 @@ These aren't bugs in the code. **Nobody defined them**, so nobody can say what "
 **Don't ship.** Each of these blocks the release on its own:
 - **F22:** the backend can't start in production at all.
 - **F1, F2 and F23:** customers' data isn't separated, and one customer can change another's hiring results.
-- **F3 and F24:** candidates can't open their interview link, and some can't get past the internet check.
+- **F3, F24 and F25:** candidates can't open their interview link, some can't get past the internet check, and a dropped connection is shown to them as a finished interview.
 - **F4, F5, F6:** hiring results can be silently wrong while the screen says everything is fine.
 
 **What I would require before any client sees it:**
@@ -632,6 +669,7 @@ The first version of this file covered only part of the code. Here's where each 
 | "What worries me" notes (unverified token, race conditions, trusting AI output) | **F17, F11, F5/F10** | Each became its own finding with evidence |
 | — | **F1, F3, F4, F6, F7, F9, F12–F14, F16, F19, F20, M2–M8** | New in the full sweep |
 | — | **F24, M10** | Found during manual testing of the candidate flow, after the F3 fix made the invite link work |
+| — | **F25** | Found during manual testing: a failed live connection showed "Interview Complete" while the recruiter's monitor kept showing "Live" |
 | F17 bullet "company chosen from unchecked data" | **F23** (P1) | Found while fixing F2: exploiting it gave full read and write access to another company. Re-ranked from P2 to P1. |
 
 ---
