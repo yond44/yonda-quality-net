@@ -186,7 +186,8 @@ export type InterviewState =
   // Failures are never shown as "complete" (audit F25):
   | "connection_lost" // live connection dropped and reconnecting failed; the interview is still resumable
   | "load_error"      // the interview couldn't be loaded (server down, network, rate limit)
-  | "invalid_link";   // the server doesn't know this invite link
+  | "invalid_link"    // the server doesn't know this invite link
+  | "server_error";   // the server stopped the interview with an error
 
 export type InterviewSpeaker = "ai" | "candidate" | null;
 

@@ -51,11 +51,22 @@ class AudioWebSocketMiddleware
     browser_ws.rack_response
   end
 
+  SESSION_ENDED_ERROR = 'Session has ended'
+
+  # A session that already ended isn't a failure: tell the page it's over, and it shows
+  # "Interview Complete". Anything else stays an error, which the page never shows as
+  # a finished interview (audit F25).
+  def open_failure_message(error)
+    return { type: 'session_ended', reason: 'already_ended' } if error == SESSION_ENDED_ERROR
+
+    { type: 'error', code: 'auth_failed', message: error, recoverable: false }
+  end
+
   def handle_browser_open(env, session_id, browser_ws, state)
     session, error = authenticate_and_load(env, session_id)
 
     if error
-      browser_ws.send({ type: 'error', code: 'auth_failed', message: error, recoverable: false }.to_json)
+      browser_ws.send(open_failure_message(error).to_json)
       browser_ws.close
       return
     end
@@ -786,7 +797,7 @@ class AudioWebSocketMiddleware
     end
 
     return [nil, 'Session not found'] unless session
-    return [nil, 'Session has ended'] if session.ended?
+    return [nil, SESSION_ENDED_ERROR] if session.ended?
     return [nil, 'Session ID mismatch'] if session.id.to_s != session_id
 
     [session, nil]

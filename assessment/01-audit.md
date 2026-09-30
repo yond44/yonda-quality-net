@@ -467,7 +467,7 @@ Connections drop in normal use: a candidate's Wi-Fi, a server restart during a d
 **What remains after the fix (disclosed, not hidden):**
 - **An abandoned interview is ended when someone next looks at it**, not at the moment its time runs out. A scheduled cleanup job would be better, but the project has no job scheduler.
 - **During the resumable window, the recruiter's live monitor still shows "Live"**, because the backend can't tell "reconnecting" from "gone" without changing the live WebSocket code, which the net can't test.
-- **A non-recoverable error sent by the server** during the interview (for example "Assessment configuration is incomplete") is still shown to the candidate as "Interview Complete" ([`useAudioWebSocket.ts:106`](../web/src/hooks/useAudioWebSocket.ts#L106)). It's the same class of bug, on a different path with no test yet.
+- ~~A non-recoverable error sent by the server was still shown as "Interview Complete".~~ **Fixed in a follow-up pull request** (the one that shows the gate passing). A server error now shows *"Something went wrong"* with Try again ([`useAudioWebSocket.ts:106-108`](../web/src/hooks/useAudioWebSocket.ts#L106-L108)). A session that really ended is reported as ended by the server ([`audio_websocket_middleware.rb`](../api/app/channels/audio_websocket_middleware.rb), `open_failure_message`), so the page shows "Interview Complete" only then. It's tested on both sides.
 - **The ended interview still gets a portfolio** generated from whatever transcript exists, as every `error` ending already did. The recruiter sees the `error` flag next to it.
 
 ---

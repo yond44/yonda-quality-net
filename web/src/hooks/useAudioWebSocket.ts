@@ -103,7 +103,9 @@ export function useAudioWebSocket({
               onStateChange("complete");
               break;
             case "error":
-              if (!msg.recoverable) onStateChange("complete");
+              // A server error is never a finished interview (audit F25). A session that
+              // really ended arrives as "session_ended" instead.
+              if (!msg.recoverable) onStateChange("server_error");
               break;
           }
         } catch {
