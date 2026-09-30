@@ -170,7 +170,7 @@ export default function FitGapReportPage() {
             </CardHeader>
             <CardContent className="px-4 pb-4">
               <p className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
-                {report.culture_narrative || "No culture assessment for this report."}
+                {report.culture_narrative || report.overall_narrative}
               </p>
             </CardContent>
           </Card>
