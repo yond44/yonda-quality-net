@@ -44,5 +44,5 @@
 
 ### Known issues in this version
 
-- **13 lower-severity findings remain** (P2/P3: F9–F21). None loses or corrupts data. Each is listed with a mitigation and an owner in the release decision.
+- **13 lower-severity findings remain** (P2/P3: F9–F21). None is *known* to lose or corrupt data; F11 and F12 are unconfirmed timing risks that could. Each is listed with a mitigation and an owner in the release decision. *(Corrected after tagging: the v1.0.0 tag's copy says "none loses or corrupts data", which was too strong.)*
 - **4 product decisions are still open** (M3, M4, M5, M7 in the audit): how interviews end, rules that exist only in the code, versioning edited assessments, and how long hiring evidence is kept.
