@@ -130,18 +130,22 @@ A CI check only **blocks** a merge when GitHub is told it's required. This is a 
 
 ---
 
-## The gate in action: two pull requests
+## The gate in action: three pull requests
 
-The brief asks for the gate to be **shown working on real changes**, not just described. Two pull requests do that, and both stay visible:
+The brief asks for the gate to be **shown working on real changes**, not just described. Three pull requests did that, and all three stay visible:
 
-| Pull request | What it changes | What the gate says |
-|---|---|---|
-| **Blocked:** branch `demo/culture-fit-quick-fix` | A one-line "quick fix" to the fit/gap page's culture box. The PR template is left empty, and there's no test. | ❌ **Blocked on all four inputs:** no spec linked, no acceptance criteria, no design plan, and code changed without a test. |
-| **Passed:** branch `fix/f8-fitgap-required-level` | The F8 fix: the fit/gap payload carries the fields the web app reads. | ✅ **All four inputs present:** the audit finding as the spec, Given/When/Then criteria, a design plan, and a new test. The rest of CI is green too. |
+| Pull request | What it changes | Its description | Gate: Definition of Ready | Rest of CI | What happened |
+|---|---|---|---|---|---|
+| [#2](https://github.com/yond44/yonda-quality-net/pull/2) | A one-line "quick fix" to the fit/gap page's culture box, with no test | The empty template, on purpose | ❌ **Blocked** on all four inputs ([36667157742](https://github.com/yond44/yonda-quality-net/actions/runs/36667157742)) | ❌ (F8 wasn't fixed on `main` yet) | Merged anyway (see below), then **reverted** on `main` |
+| [#1](https://github.com/yond44/yonda-quality-net/pull/1) | The F8 fix, with a new test | The empty template, **by mistake**: the prepared description wasn't pasted | ❌ **Blocked**: no spec, criteria or plan ([36667125182](https://github.com/yond44/yonda-quality-net/actions/runs/36667125182)) | ✅ All green | Merged anyway (see below). The code was sound; the gate caught the missing inputs |
+| [#3](https://github.com/yond44/yonda-quality-net/pull/3) | The F25 follow-up: a server error while opening the interview was shown as "Interview Complete" | Spec linked, Given/When/Then criteria, design plan, tests | ✅ **Passed** in both runs | ❌ then ✅: [36668038365](https://github.com/yond44/yonda-quality-net/actions/runs/36668038365) with only the new tests, [36668170107](https://github.com/yond44/yonda-quality-net/actions/runs/36668170107) with the fix | All checks green |
 
-Before opening them, both descriptions were run through the gate's own code (`evaluate()` in [`definition-of-ready.mjs`](../.github/scripts/definition-of-ready.mjs)), with each branch's real list of changed files. The results were 4 of 4 blocked and 4 of 4 passed.
+**What this showed:**
+- **The gate does its job.** It stopped the two PRs that had no inputs, including a real fix whose description was simply forgotten, and passed the one that had them. A forgotten description is exactly the everyday slip it exists to catch.
+- **It only *blocks* once branch protection is on.** Without the GitHub rule, a failed check is just a red mark, and anyone can still press Merge. That's how #1 and #2 got in. Turning on "Require status checks to pass before merging" (see "Making the gate impossible to skip" above) is what turns the gate from a warning into a gate. The unspecified change from #2 was reverted on `main`, because it quietly made a product decision nobody had specified.
+- **Red → green inside a pull request.** In #3 the tests were pushed first. The gate passed (the inputs were there) while the tests were red, then the fix turned the tests green.
 
-**Why the blocked change is a good example:** it looks harmless, but it quietly makes a product decision (what should the page show when there's no culture assessment?) that nobody specified. That's the "ghost spec" the gate exists to stop. The blocked PR is left open and unmerged on purpose.
+Before opening them, the descriptions were also run through the gate's own code (`evaluate()` in [`definition-of-ready.mjs`](../.github/scripts/definition-of-ready.mjs)) with each branch's real list of changed files.
 
 ## Red → green log
 
@@ -162,7 +166,8 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 | **F7** results depend on the AI spelling skill names exactly | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 3/3 failing | [36665937396](https://github.com/yond44/yonda-quality-net/actions/runs/36665937396) (F7 no longer flagged) | Each skill gets a unique reference in the prompt; answers are mapped back through it and stored under the configured name; a missing skill fails loudly |
 | **F26** the AI never opens the interview; the candidate is stuck muted *(found in manual testing)* | [36665966050](https://github.com/yond44/yonda-quality-net/actions/runs/36665966050): 2/3 failing | [36665991784](https://github.com/yond44/yonda-quality-net/actions/runs/36665991784) (F26 no longer flagged) | A watchdog asks again after 10 s, then gives the turn back to the candidate; the start message is signed |
 | **F27** the AI reads its hidden notes aloud, and the record hides it *(found in manual testing)* | [36666018100](https://github.com/yond44/yonda-quality-net/actions/runs/36666018100): 2/3 failing | [36666047243](https://github.com/yond44/yonda-quality-net/actions/runs/36666047243) (F27 no longer flagged) | Notes are sent under the tag the AI is told to keep silent; a slip is marked in the recruiter's transcript |
-| **F8** "Required" column always empty | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 3/3 failing | the F8 pull request's run | The comparison also carries `required_level` and `is_override`; old reports get `required_level` filled in when read |
+| **F8** "Required" column always empty | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 3/3 failing | [#1](https://github.com/yond44/yonda-quality-net/pull/1) [36667125182](https://github.com/yond44/yonda-quality-net/actions/runs/36667125182) (all tests green) and `main` after the merge [36667342497](https://github.com/yond44/yonda-quality-net/actions/runs/36667342497) | The comparison also carries `required_level` and `is_override`; old reports get `required_level` filled in when read |
+| **F25 follow-up** a server error while opening the interview shown as "Interview Complete" | [#3](https://github.com/yond44/yonda-quality-net/pull/3) [36668038365](https://github.com/yond44/yonda-quality-net/actions/runs/36668038365): the new web and API checks failing | [#3](https://github.com/yond44/yonda-quality-net/pull/3) [36668170107](https://github.com/yond44/yonda-quality-net/actions/runs/36668170107) | The server reports an already-ended session as ended; any other failure shows "Something went wrong" |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
 
@@ -620,8 +625,8 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - **Add fields; don't rename them.** Nothing that works today changes: the PDF export and stored reports keep `expected_level`.
   - **Fill in old reports when they're read,** so no data migration is needed.
   - **The test's source of truth is the web's own type file,** so the next time one side renames a field, CI goes red before a user sees an empty column.
-- **Delivered as the pull request that shows the Definition-of-Ready gate passing:** spec linked, acceptance criteria in Given/When/Then, a design plan, and a test.
-- **Green:** the F8 pull request's run.
+- **Delivered in pull request [#1](https://github.com/yond44/yonda-quality-net/pull/1).** Its description was left as the empty template by mistake, so the gate failed it, correctly (see "The gate in action").
+- **Green:** [36667125182](https://github.com/yond44/yonda-quality-net/actions/runs/36667125182) (PR #1, all tests green) and [36667342497](https://github.com/yond44/yonda-quality-net/actions/runs/36667342497) (`main` after the merge).
 
 ## Assumptions
 

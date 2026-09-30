@@ -560,7 +560,7 @@ The stored data is correct (the PDF export shows it), so this is P2. But for a "
 
 > **In plain words:** the backend labels the box "expected", the frontend looks for a box labelled "required", finds nothing, and shows an empty cell. No error, just a blank.
 
-**Status: fixed** (in the pull request that demonstrates the gate passing).
+**Status: fixed** (merged in pull request [#1](https://github.com/yond44/yonda-quality-net/pull/1)).
 - **Tests:** [`f8_fitgap_contract_spec.rb`](../api/spec/requests/f8_fitgap_contract_spec.rb) is a contract test. It reads the field list from the **website's own TypeScript type**, so renaming a field on either side fails the build. Its 3 checks failed and now pass, unchanged: every field the web requires is sent; the Required column gets the vacancy's level; an overridden rating is marked.
 - **The fix:** each comparison now also carries `required_level` and `is_override` ([`engine.rb:62-66`](../api/app/services/fit_gap/engine.rb#L62-L66)). `expected_level` stays, because the PDF export and already-saved reports use it. Reports saved before the fix get `required_level` filled in when they're read ([`portfolios_controller.rb:211-212`](../api/app/controllers/api/v1/portfolios_controller.rb#L211-L212)), so old reports show it too.
 - **Why the backend, although the audit found the frontend was the "wrong" side:** adding fields changes nothing that works today. Renaming the web's fields would have meant changing the contract test's source of truth, and every stored report would still lack them.
