@@ -89,4 +89,20 @@ describe("F25: a lost connection is never shown to the candidate as a finished i
 
         expect(last(states)).toBe("complete");
     });
+
+    it("does not report 'complete' when the server stops the interview with an error", () => {
+        const states = renderInterviewConnection();
+        const socket = last(FakeWebSocket.opened);
+
+        act(() =>
+            socket.serverSends({
+                type: "error",
+                code: "no_system_prompt",
+                message: "Assessment configuration is incomplete.",
+                recoverable: false,
+            })
+        );
+
+        expect(states).not.toContain("complete");
+    });
 });
