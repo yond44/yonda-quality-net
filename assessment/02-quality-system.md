@@ -142,6 +142,7 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 | **F24** internet check blocks good connections *(found in manual testing)* | [36563351392](https://github.com/yond44/yonda-quality-net/actions/runs/36563351392): 5/6 failing (web tests) | [36563510380](https://github.com/yond44/yonda-quality-net/actions/runs/36563510380) (web check green) | Limits derived from the voice audio; upload and ping measured on our own backend, one at a time; a failed measurement is "couldn't measure", never an invented number |
 | **F4** removed skills stay in the database | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/2 failing | [36565150346](https://github.com/yond44/yonda-quality-net/actions/runs/36565150346) (F4 no longer flagged) | The edit endpoints treat the sent list as complete: skills left out of it are deleted in the same save |
 | **F5** an unreadable AI level is saved as L1 | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/3 failing; the new regeneration check: [36566738655](https://github.com/yond44/yonda-quality-net/actions/runs/36566738655) (3/4 failing) | [36568044569](https://github.com/yond44/yonda-quality-net/actions/runs/36568044569) (F5 no longer flagged) | The level is read strictly (3, "3", "L3") or generation fails loudly; all skills are checked first, then saved in one transaction |
+| **F25** a dropped connection looks like a finished interview; an abandoned one stays "Live" *(found in manual testing)* | the `test(F25)` commit's run: 2 web + 2 API checks failing | the `fix(F25)` commit's run | Failures get their own screens (never "complete"); an interview more than 15 minutes past its time limit is ended as `error` when read |
 | **F6–F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 8 failing, 0 errors | *Task 3* | *Task 3* |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
@@ -374,6 +375,61 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - **Accept `"L3"`:** it's unambiguous, and the website's own types describe levels that way, so rejecting it would cause needless failures.
   - **Check first, then save in one transaction:** a regeneration must never destroy a good earlier result on its way to failing.
 - **Green:** [36568044569](https://github.com/yond44/yonda-quality-net/actions/runs/36568044569) (F5 no longer flagged).
+
+### F25: a dropped connection looked like a finished interview, and stayed "Live" forever (P1, found in manual testing)
+
+- **Red:** the `test(F25)` commit's run. 2 web checks and 2 API checks failed; each has a control that passed.
+- **Root cause:** the code treated "I don't know what happened" as "it finished".
+  - When reconnecting failed, the page reported the interview as **complete**.
+  - When the page couldn't load, it showed the **"Interview Complete"** screen.
+  - The only check that ends an overdue interview runs **inside** the live connection, so once the candidate was gone nothing ever ended it, and the recruiter saw it as **"Live"** forever.
+- **Files changed:**
+  - [`types/index.ts:185-189`](../web/src/types/index.ts#L185-L189): three new page states for failures
+  - [`useAudioWebSocket.ts:130-131`](../web/src/hooks/useAudioWebSocket.ts#L130-L131): a failed reconnect is "connection lost"
+  - [`InterviewPage.tsx:51-52`](../web/src/pages/interview/InterviewPage.tsx#L51-L52): a failed load is an error, and a 404 means an invalid link
+  - [`InterviewPage.tsx:245-275`](../web/src/pages/interview/InterviewPage.tsx#L245-L275): the three failure screens
+  - [`session.rb:25`](../api/app/models/session.rb#L25) and [`:38-55`](../api/app/models/session.rb#L38-L55): the "abandoned" rule
+  - [`end_handler.rb:14-34`](../api/app/services/sessions/end_handler.rb#L14-L34): an optional real end time
+  - [`sessions_controller.rb:14`](../api/app/controllers/api/v1/sessions_controller.rb#L14), [`:139`](../api/app/controllers/api/v1/sessions_controller.rb#L139), [`:161`](../api/app/controllers/api/v1/sessions_controller.rb#L161) and [`assessments_controller.rb:81`](../api/app/controllers/api/v1/assessments_controller.rb#L81): applied wherever a session is shown
+- **Before → after:**
+  ```ts
+  // useAudioWebSocket.ts: reconnects exhausted
+  // BEFORE
+  onStateChange("complete");
+  // AFTER
+  onStateChange("connection_lost");   // "Connection lost. Your interview has not ended" + Reconnect
+
+  // InterviewPage.tsx: the invite link can't be loaded
+  // BEFORE
+  .catch(() => setInterviewState("complete"));
+  // AFTER
+  .catch((err) => setInterviewState(err?.response?.status === 404 ? "invalid_link" : "load_error"));
+  ```
+  ```ruby
+  # session.rb - NEW: an interview can't still be live 15 minutes past its time limit
+  def abandoned?(now = Time.current)
+    return false unless active? && started_at
+    time_limit = Assessment.unscoped.where(id: assessment_id).pick(:time_limit_min)
+    time_limit.present? && now > started_at + time_limit.minutes + ABANDONED_AFTER_LIMIT
+  end
+
+  def end_if_abandoned!
+    return self unless abandoned?
+    last_activity = transcript_turns.maximum(:created_at) || started_at
+    Sessions::EndHandler.new(self).call(reason: 'error', ended_at: last_activity)
+    self
+  end
+
+  # sessions_controller.rb - BEFORE / AFTER
+  @session = Session.find(params[:id])
+  @session = Session.find(params[:id]).end_if_abandoned!
+  ```
+- **Why this way:**
+  - **Separate failure screens, not one generic error:** "connection lost" (reconnect works), "couldn't load" (retry works) and "invalid link" (retry won't help) each need a different action from the candidate.
+  - **The interview stays resumable within its time limit:** a dropped Wi-Fi connection shouldn't cost a candidate their interview.
+  - **Ended when read, not by a timer:** there is no job scheduler in the project, and every place a recruiter or candidate could see a stale "Live" now checks first. Disclosed as a limitation.
+  - **Reason `error`, not a new one:** the website already highlights `error` endings to the recruiter, so no new status was needed.
+- **Green:** the `fix(F25)` commit's run.
 
 ## Assumptions
 

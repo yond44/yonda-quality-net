@@ -48,7 +48,8 @@ export default function InterviewPage() {
         setSessionId(res.data.session_id);
         if (res.data.session_status === "ended") setInterviewState("complete");
       })
-      .catch(() => setInterviewState("complete"));
+      // A failed load is not a finished interview (audit F25).
+      .catch((err) => setInterviewState(err?.response?.status === 404 ? "invalid_link" : "load_error"));
   }, [token]);
 
   const muteRef = useRef<(() => void) | null>(null);
@@ -237,6 +238,38 @@ export default function InterviewPage() {
           <br />
           The hiring team will review your results and follow up with you.
         </p>
+      </div>
+    );
+  }
+
+  // ── Failure states: never shown as "complete" (audit F25) ───────────────
+  if (interviewState === "connection_lost" || interviewState === "load_error" || interviewState === "invalid_link") {
+    const message = {
+      connection_lost: {
+        title: "Connection lost",
+        body: "Your interview has not ended. Check your internet connection, then reconnect to continue.",
+        action: "Reconnect",
+      },
+      load_error: {
+        title: "We couldn't load your interview",
+        body: "Check your internet connection and try again.",
+        action: "Try again",
+      },
+      invalid_link: {
+        title: "This interview link isn't valid",
+        body: "Check that you opened the full link from your invitation, or contact the hiring team.",
+        action: null,
+      },
+    }[interviewState];
+
+    return (
+      <div className="max-w-xl mx-auto px-4 py-16 text-center space-y-4">
+        <h2 className="text-xl font-semibold">{message.title}</h2>
+        <p className="text-sm text-muted-foreground">{message.body}</p>
+        {message.action && (
+          // Reloading re-checks the interview and resumes it if it's still open.
+          <Button onClick={() => window.location.reload()}>{message.action}</Button>
+        )}
       </div>
     );
   }

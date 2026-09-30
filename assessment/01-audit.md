@@ -6,7 +6,7 @@
 1. I read the code and compared it to the specs.
 2. I ran the whole app on my machine and **reproduced the main problems for real**. Each finding below says how to reproduce it.
 
-**Status:** F22, F1, F2, F23, F3, F24, F4 and F5 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
+**Status:** F22, F1, F2, F23, F3, F24, F4, F5 and F25 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
 
 ---
 
@@ -90,7 +90,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F6 | Anyone with the invite link can end the interview as "all covered" | **P1** | built-wrong | LIVE | open |
 | F7 | Candidate-vs-vacancy comparison depends on the AI repeating skill names exactly | **P1** | built-wrong | CODE | open |
 | F24 | The pre-interview internet check blocks candidates whose connection is good enough (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
-| F25 | A dropped connection tells the candidate "Interview Complete", and the interview stays "Live" forever (found in manual testing) | **P1** | built-wrong | LIVE | open |
+| F25 | A dropped connection tells the candidate "Interview Complete", and the interview stays "Live" forever (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F8 | "Required" column in the fit/gap table is always empty | P2 | built-wrong | LIVE | open |
 | F9 | Delete says "deleted" but nothing is deleted | P2 | built-wrong | LIVE | open |
 | F10 | The AI decides "confidence", although the spec gives a fixed rule | P2 | built-wrong | CODE | open |
@@ -415,14 +415,24 @@ Connections drop in normal use: a candidate's Wi-Fi, a server restart during a d
 
 > **In plain words:** when the phone line drops, the app tells the caller "thanks, your call has been recorded" and hangs up, while the office's switchboard shows the call as still in progress, forever.
 
-**Planned fix:**
-- **Web:** after the reconnects run out, say *"Connection lost. Reopen your link to continue"*, not "complete". When the page can't load, show an error with Retry.
-- **Backend:** an interview still `active` well past its time limit can't really be live, so it's ended with an honest reason when it's read. An interruption **within** the time limit stays resumable: the candidate can reopen the link and continue.
+**Status: fixed.**
+- **Tests first,** pushed without a fix, and each failed on the bug. Each has a control that passes throughout.
+  - [`useAudioWebSocket.test.ts`](../web/src/hooks/useAudioWebSocket.test.ts): the candidate is never told "complete" after a lost connection. The control: a real end from the server still shows "complete".
+  - [`InterviewPage.test.tsx`](../web/src/pages/interview/InterviewPage.test.tsx): a page that can't load isn't shown as "Interview Complete". The control: an ended interview still is.
+  - [`f25_abandoned_session_spec.rb`](../api/spec/requests/f25_abandoned_session_spec.rb): an interview still `active` long after its time limit isn't reported as live, to the recruiter or on the candidate's link. The control: an interview within its time limit stays live.
+- **The fix, web** ([`useAudioWebSocket.ts`](../web/src/hooks/useAudioWebSocket.ts), [`InterviewPage.tsx`](../web/src/pages/interview/InterviewPage.tsx)):
+  - When reconnecting fails, the page says **"Connection lost. Your interview has not ended"**, with a Reconnect button. The interview is still resumable, so reconnecting really continues it.
+  - When the page can't load the interview, it says **"We couldn't load your interview"** with Try again, or **"This interview link isn't valid"** when the server doesn't know the link.
+- **The fix, backend** ([`session.rb`](../api/app/models/session.rb), [`end_handler.rb`](../api/app/services/sessions/end_handler.rb), [`sessions_controller.rb`](../api/app/controllers/api/v1/sessions_controller.rb), [`assessments_controller.rb`](../api/app/controllers/api/v1/assessments_controller.rb)):
+  - An interview still `active` **more than 15 minutes past its time limit** is ended with reason `error` whenever it's read: the recruiter's session view and list, the assessment list, and the candidate's link. The website already highlights `error` endings for the recruiter.
+  - Its end time is its **last activity** (the last transcript line, or the start), so its recorded duration isn't inflated to hours.
+  - Within the time limit plus 15 minutes nothing changes, so a candidate whose connection dropped can reopen the link and continue.
 
-**Tests written before the fix** (they fail on the current code):
-- [`useAudioWebSocket.test.ts`](../web/src/hooks/useAudioWebSocket.test.ts): the candidate is never told "complete" after a lost connection. The control: a real end from the server still shows "complete".
-- [`InterviewPage.test.tsx`](../web/src/pages/interview/InterviewPage.test.tsx): a page that can't load isn't shown as "Interview Complete". The control: an ended interview still is.
-- [`f25_abandoned_session_spec.rb`](../api/spec/requests/f25_abandoned_session_spec.rb): an interview still `active` long after its time limit isn't reported as live, to the recruiter or on the candidate's link. The control: an interview within its time limit stays live.
+**What remains after the fix (disclosed, not hidden):**
+- **An abandoned interview is ended when someone next looks at it**, not at the moment its time runs out. A scheduled cleanup job would be better, but the project has no job scheduler.
+- **During the resumable window, the recruiter's live monitor still shows "Live"**, because the backend can't tell "reconnecting" from "gone" without changing the live WebSocket code, which the net can't test.
+- **A non-recoverable error sent by the server** during the interview (for example "Assessment configuration is incomplete") is still shown to the candidate as "Interview Complete" ([`useAudioWebSocket.ts:106`](../web/src/hooks/useAudioWebSocket.ts#L106)). It's the same class of bug, on a different path with no test yet.
+- **The ended interview still gets a portfolio** generated from whatever transcript exists, as every `error` ending already did. The recruiter sees the `error` flag next to it.
 
 ---
 

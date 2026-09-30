@@ -11,7 +11,7 @@ module Api
       # GET /api/v1/assessments/:assessment_id/sessions
       def index
         assessment = Assessment.find(params[:assessment_id])
-        sessions = assessment.sessions.order(created_at: :desc)
+        sessions = assessment.sessions.order(created_at: :desc).to_a.each(&:end_if_abandoned!) # audit F25
 
         json_response(sessions: sessions.map(&method(:session_json)))
       rescue ActiveRecord::RecordNotFound
@@ -136,6 +136,8 @@ module Api
           return json_error("Invalid or expired invite token", :not_found)
         end
 
+        session.end_if_abandoned! # an interview long past its time limit isn't live (audit F25)
+
         # Resolve tenant from the session's own tenant_id so we can load the assessment
         assessment = Assessment.unscoped
                                .where(tenant_id: session.tenant_id)
@@ -156,7 +158,7 @@ module Api
       private
 
       def set_session
-        @session = Session.find(params[:id])
+        @session = Session.find(params[:id]).end_if_abandoned! # audit F25
       rescue ActiveRecord::RecordNotFound
         json_error("Session not found", :not_found)
       end

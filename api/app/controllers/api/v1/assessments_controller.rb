@@ -78,7 +78,7 @@ module Api
       end
 
       def assessment_json(assessment)
-        latest = assessment.sessions.max_by(&:created_at)
+        latest = assessment.sessions.max_by(&:created_at)&.end_if_abandoned! # audit F25
 
         {
           id:             assessment.id,

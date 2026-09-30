@@ -11,7 +11,9 @@ module Sessions
       @session = session
     end
 
-    def call(reason: 'manual_assessor')
+    # ended_at: when the interview really stopped. Defaults to now; an abandoned
+    # interview passes its last activity so its duration isn't inflated (audit F25).
+    def call(reason: 'manual_assessor', ended_at: Time.current)
       # Allow upgrading end_reason from 'error' to a manual reason (candidate/assessor ended cleanly)
       if @session.ended?
         manual = %w[manual_candidate manual_assessor]
@@ -24,12 +26,12 @@ module Sessions
       reason = 'manual_assessor' unless VALID_REASONS.include?(reason.to_s)
 
       ActiveRecord::Base.transaction do
-        duration = @session.started_at ? (Time.current - @session.started_at).to_i : nil
+        duration = @session.started_at ? (ended_at - @session.started_at).to_i : nil
 
         @session.update!(
           status:           'ended',
           end_reason:       reason.to_s,
-          ended_at:         Time.current,
+          ended_at:         ended_at,
           duration_seconds: duration
         )
 
