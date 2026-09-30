@@ -143,7 +143,7 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 | **F4** removed skills stay in the database | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/2 failing | [36565150346](https://github.com/yond44/yonda-quality-net/actions/runs/36565150346) (F4 no longer flagged) | The edit endpoints treat the sent list as complete: skills left out of it are deleted in the same save |
 | **F5** an unreadable AI level is saved as L1 | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/3 failing; the new regeneration check: [36566738655](https://github.com/yond44/yonda-quality-net/actions/runs/36566738655) (3/4 failing) | [36568044569](https://github.com/yond44/yonda-quality-net/actions/runs/36568044569) (F5 no longer flagged) | The level is read strictly (3, "3", "L3") or generation fails loudly; all skills are checked first, then saved in one transaction |
 | **F25** a dropped connection looks like a finished interview; an abandoned one stays "Live" *(found in manual testing)* | [36660161292](https://github.com/yond44/yonda-quality-net/actions/runs/36660161292): 2 web + 2 API checks failing | [36660629180](https://github.com/yond44/yonda-quality-net/actions/runs/36660629180) (F25 no longer flagged; web check green) | Failures get their own screens (never "complete"); an interview more than 15 minutes past its time limit is ended as `error` when read |
-| **F6** interviews recorded "all covered" without checking | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/3 failing | the `fix(F6)` commit's run | `all_covered` is checked where every ending is recorded (otherwise `partial_coverage`); a never-started interview can't be ended |
+| **F6** interviews recorded "all covered" without checking | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/3 failing | [36663487852](https://github.com/yond44/yonda-quality-net/actions/runs/36663487852) (F6 no longer flagged) | `all_covered` is checked where every ending is recorded (otherwise `partial_coverage`); a never-started interview can't be ended |
 | **F7–F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 6 failing, 0 errors | *Task 3* | *Task 3* |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
@@ -460,7 +460,7 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - **It reuses the live interview's own "all covered" rule,** so there's a single definition of "covered".
   - **The interview still always ends.** A code comment says an earlier coverage check in the endpoint stalled auto-end. Here only the recorded reason changes, never whether the interview ends.
   - **A new reason instead of reusing one:** none of the existing reasons (`manual_candidate`, `manual_assessor`, `time_ceiling`, `error`) says "ended before every skill was covered". The website only special-cases `error`, so it shows the new reason like any normal ending.
-- **Green:** the `fix(F6)` commit's run.
+- **Green:** [36663487852](https://github.com/yond44/yonda-quality-net/actions/runs/36663487852) (F6 no longer flagged).
 
 ## Assumptions
 
