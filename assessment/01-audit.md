@@ -6,7 +6,7 @@
 1. I read the code and compared it to the specs.
 2. I ran the whole app on my machine and **reproduced the main problems for real**. Each finding below says how to reproduce it.
 
-**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25 and F6 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
+**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25, F6 and F7 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
 
 ---
 
@@ -88,7 +88,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F4 | Removing a skill in an edit form doesn't remove it | **P1** | built-wrong | LIVE | **fixed** |
 | F5 | AI levels in an unexpected format are saved as **L1** | **P1** | built-wrong | LIVE | **fixed** |
 | F6 | Interviews are recorded as "all skills covered" without checking, including when the AI says goodbye early | **P1** | built-wrong | LIVE | **fixed** |
-| F7 | Candidate-vs-vacancy comparison depends on the AI repeating skill names exactly | **P1** | built-wrong | CODE | open |
+| F7 | Candidate-vs-vacancy comparison depends on the AI repeating skill names exactly | **P1** | built-wrong | TEST | **fixed** |
 | F24 | The pre-interview internet check blocks candidates whose connection is good enough (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F25 | A dropped connection tells the candidate "Interview Complete", and the interview stays "Live" forever (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F26 | The AI sometimes never opens the interview; the candidate is stuck in silence with a muted mic (found in manual testing) | **P1** | built-wrong | LIVE | open |
@@ -369,6 +369,18 @@ So this isn't only "someone calls the endpoint". It happens in the main flow whe
 *Next step:* a test with a fake AI response in Task 2 will turn this into a LIVE finding.
 
 > **In plain words:** we throw away each skill's ID card, then try to find people again by asking the AI to spell their full name perfectly.
+
+**Status: fixed.**
+- **Tests:** [`f7_skill_identity_spec.rb`](../api/spec/services/f7_skill_identity_spec.rb). A fake AI that follows the prompt but words the names its own way. Its 3 checks failed and now pass, unchanged: a paraphrased name is stored under the configured name; fit/gap then compares the skill instead of saying "not assessed"; a skill the AI left out fails generation and names the skill.
+- **The fix** ([`generator.rb`](../api/app/services/portfolios/generator.rb)):
+  - Each configured skill gets a **unique reference** in the AI prompt (`S` plus its row ID, e.g. `S12`), and the AI is told to copy it back. Many skills have no catalogue ID, so the old prompt labelled them all `custom`.
+  - Each answer is **mapped back through that reference**, and the portfolio stores the skill's **configured** name and ID, never the AI's wording.
+  - A configured skill the AI **left out**, an **unknown** reference, or a **repeated** one stops the generation with a message naming the skill. The job retries, and the recruiter can press Regenerate, as with F5.
+  - Skills the candidate brought up by themselves (discovered skills) keep the AI's name: there's no configuration to tie them to.
+
+**What remains after the fix (disclosed, not hidden):**
+- **Checked with a fake AI, not the real one yet.** The fake follows the prompt the way a real model should. A real-AI check was blocked by the free key's rate limit, so it's a follow-up.
+- **The skill picker still drops the catalogue ID** when a skill is picked from the list ([`SkillPicker.tsx:41`](../web/src/components/assessment/SkillPicker.tsx#L41)). That may be on purpose. It matters when an assessment and a vacancy name the same skill differently, which is a configuration issue, not the AI's wording.
 
 ---
 

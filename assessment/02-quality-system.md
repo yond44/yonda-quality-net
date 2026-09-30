@@ -144,7 +144,8 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 | **F5** an unreadable AI level is saved as L1 | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/3 failing; the new regeneration check: [36566738655](https://github.com/yond44/yonda-quality-net/actions/runs/36566738655) (3/4 failing) | [36568044569](https://github.com/yond44/yonda-quality-net/actions/runs/36568044569) (F5 no longer flagged) | The level is read strictly (3, "3", "L3") or generation fails loudly; all skills are checked first, then saved in one transaction |
 | **F25** a dropped connection looks like a finished interview; an abandoned one stays "Live" *(found in manual testing)* | [36660161292](https://github.com/yond44/yonda-quality-net/actions/runs/36660161292): 2 web + 2 API checks failing | [36660629180](https://github.com/yond44/yonda-quality-net/actions/runs/36660629180) (F25 no longer flagged; web check green) | Failures get their own screens (never "complete"); an interview more than 15 minutes past its time limit is ended as `error` when read |
 | **F6** interviews recorded "all covered" without checking | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 2/3 failing | [36663487852](https://github.com/yond44/yonda-quality-net/actions/runs/36663487852) (F6 no longer flagged) | `all_covered` is checked where every ending is recorded (otherwise `partial_coverage`); a never-started interview can't be ended |
-| **F7–F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 6 failing, 0 errors | *Task 3* | *Task 3* |
+| **F7** results depend on the AI spelling skill names exactly | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 3/3 failing | the `fix(F7)` commit's run | Each skill gets a unique reference in the prompt; answers are mapped back through it and stored under the configured name; a missing skill fails loudly |
+| **F8** | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 3 failing, 0 errors | *Task 3* | *Task 3* |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
 
@@ -461,6 +462,40 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - **The interview still always ends.** A code comment says an earlier coverage check in the endpoint stalled auto-end. Here only the recorded reason changes, never whether the interview ends.
   - **A new reason instead of reusing one:** none of the existing reasons (`manual_candidate`, `manual_assessor`, `time_ceiling`, `error`) says "ended before every skill was covered". The website only special-cases `error`, so it shows the new reason like any normal ending.
 - **Green:** [36663487852](https://github.com/yond44/yonda-quality-net/actions/runs/36663487852) (F6 no longer flagged).
+
+### F7: results depended on the AI spelling skill names exactly (P1)
+
+- **Red:** [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611), 3/3 failing.
+- **Root cause:** the portfolio stored **whatever skill name the AI wrote back**, and fit/gap matches skills by name. Many skills have no catalogue ID, so the prompt labelled them all `custom`, and the AI's answer couldn't be tied back to a configured skill. A reworded name became "not assessed", and a skill the AI left out silently disappeared.
+- **Files changed:**
+  - [`generator.rb:9`](../api/app/services/portfolios/generator.rb#L9): a new error for mismatched answers
+  - [`generator.rb:107-108`](../api/app/services/portfolios/generator.rb#L107-L108): the prompt tells the AI to copy each skill's reference back
+  - [`generator.rb:137`](../api/app/services/portfolios/generator.rb#L137): each skill's reference in the prompt
+  - [`generator.rb:163`](../api/app/services/portfolios/generator.rb#L163) and [`:174-197`](../api/app/services/portfolios/generator.rb#L174-L197): `skill_ref` and `configured_rows`, which map the answers back
+  - [`generator.rb:199-202`](../api/app/services/portfolios/generator.rb#L199-L202): the stored name and ID come from the configuration
+- **Before → after:**
+  ```ruby
+  # The prompt — BEFORE: skills without a catalogue ID are all "(custom)"
+  lines << "SKILL: #{skill.skill_label} (#{skill.skill_id || 'custom'})"
+  # AFTER: every skill has its own reference
+  lines << "SKILL: #{skill.skill_label} (#{skill_ref(skill)})"      # e.g. "SKILL: Negotiation Skills (S12)"
+
+  # Saving — BEFORE: store what the AI wrote
+  skill_id:    skill_data['skill_id'],
+  skill_label: skill_data['skill_label'],
+  # AFTER: find the configured skill through the reference, store ITS name and ID
+  skill = configured[skill_data['skill_id'].to_s.strip]
+  raise SkillMismatch, "AI answered for an unknown skill: ..." unless skill
+  ...
+  missing = configured.except(*answered.keys).values.map(&:skill_label)
+  raise SkillMismatch, "AI's answer is missing configured skills: #{missing.join(', ')}" if missing.any?
+  ```
+  In JavaScript terms: `const skill = configuredByRef[answer.skill_id]; if (!skill) throw ...; save({ label: skill.label, id: skill.id })`.
+- **Why this way:**
+  - **A reference we control, not a name the AI controls.** The AI only has to copy a short code, which is far more reliable than reproducing a long name exactly, and nothing depends on its wording any more.
+  - **Row IDs, not catalogue IDs:** custom skills have no catalogue ID, and every skill has a row ID.
+  - **Fail loudly on a missing skill:** a silently missing skill looks like "not assessed" to the recruiter, which is wrong data. A visible failure retries and can be regenerated.
+- **Green:** the `fix(F7)` commit's run.
 
 ## Assumptions
 

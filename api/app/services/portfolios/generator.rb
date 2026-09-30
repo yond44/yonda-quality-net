@@ -6,6 +6,7 @@ module Portfolios
   # Runs post-session as a background job.
   class Generator
     class UnreadableLevel < StandardError; end
+    class SkillMismatch < StandardError; end
 
     LEVEL_TEXT = /\A\s*L?\s*([1-5])\s*\z/i # "3", "L3", "l 3"
 
@@ -103,11 +104,14 @@ module Portfolios
            medium — probe_count = 2 OR state = partial
            low — probe_count <= 1 OR state = initiated
 
+        Answer for EVERY configured skill above, exactly once. For each one, copy the ID in
+        brackets after "SKILL:" into "skill_id" exactly as written (for example "S12").
+
         OUTPUT (JSON only, no prose):
         {
           "configured_skills": [
             {
-              "skill_id": "sk-eng-001",
+              "skill_id": "S12",
               "skill_label": "React / Frontend Development",
               "level": 3,
               "confidence": "high",
@@ -130,7 +134,7 @@ module Portfolios
 
     def skill_definition_block(skill)
       lines = ["━━━━━━━━━━━━━━━"]
-      lines << "SKILL: #{skill.skill_label} (#{skill.skill_id || 'custom'})"
+      lines << "SKILL: #{skill.skill_label} (#{skill_ref(skill)})"
       lines << "SCOPE: #{skill.scope_include}" if skill.scope_include.present?
       lines << ""
       lines << "L1 — #{skill.l1_anchor}"
@@ -156,7 +160,7 @@ module Portfolios
 
       # Read and check every skill before touching the saved ones, then replace them in
       # one transaction: a bad answer never leaves a half-saved portfolio (audit F5).
-      rows = (data['configured_skills'] || []).map { |skill_data| skill_row(skill_data, discovered: false) } +
+      rows = configured_rows(data['configured_skills'] || []) +
              (data['discovered_skills'] || []).map { |skill_data| skill_row(skill_data, discovered: true) }
 
       PortfolioSkill.transaction do
@@ -165,10 +169,37 @@ module Portfolios
       end
     end
 
-    def skill_row(skill_data, discovered:)
+    # Each configured skill gets a unique reference in the prompt ("S" + its row ID),
+    # because many skills have no catalogue ID and the AI's wording of a name varies.
+    def skill_ref(skill) = "S#{skill.id}"
+
+    # Ties each answer back to the configured skill through the reference the prompt
+    # gave it, and stores the skill's configured name and ID, never the AI's wording.
+    # A configured skill the AI left out, or an answer for an unknown or repeated
+    # reference, fails generation loudly instead of disappearing (audit F7).
+    def configured_rows(answers)
+      configured = @session.assessment.assessment_skills.index_by { |skill| skill_ref(skill) }
+      answered = {}
+
+      answers.each do |skill_data|
+        ref = skill_data['skill_id'].to_s.strip
+        skill = configured[ref]
+        raise SkillMismatch, "AI answered for an unknown skill: #{skill_data['skill_label'].inspect} (#{ref.inspect})" unless skill
+        raise SkillMismatch, "AI answered twice for '#{skill.skill_label}'" if answered.key?(ref)
+
+        answered[ref] = skill_row(skill_data, discovered: false, configured_skill: skill)
+      end
+
+      missing = configured.except(*answered.keys).values.map(&:skill_label)
+      raise SkillMismatch, "AI's answer is missing configured skills: #{missing.join(', ')}" if missing.any?
+
+      answered.values
+    end
+
+    def skill_row(skill_data, discovered:, configured_skill: nil)
       {
-        skill_id:           discovered ? nil : skill_data['skill_id'],
-        skill_label:        skill_data['skill_label'],
+        skill_id:           configured_skill&.skill_id,
+        skill_label:        configured_skill&.skill_label || skill_data['skill_label'],
         is_discovered:      discovered,
         ai_level:           parse_level(skill_data),
         ai_confidence:      skill_data['confidence'],
