@@ -6,7 +6,7 @@
 1. I read the code and compared it to the specs.
 2. I ran the whole app on my machine and **reproduced the main problems for real**. Each finding below says how to reproduce it.
 
-**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25, F6, F7, F26, F27 and F8 are `fixed`. Everything else is `open`. I update the Status column as fixes land in Task 3.
+**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25, F6, F7, F26, F27 and F8 are `fixed`. Everything else is `remaining`: a conscious call for this release, with owners in [`03-release-decision.md`](03-release-decision.md).
 
 ---
 
@@ -94,19 +94,19 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F26 | The AI sometimes never opens the interview; the candidate is stuck in silence with a muted mic (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F27 | The AI can read its hidden notes aloud, and the transcript hides it from the recruiter (found in manual testing) | P2 | built-wrong | LIVE + TEST | **fixed** |
 | F8 | "Required" column in the fit/gap table is always empty | P2 | built-wrong | LIVE | **fixed** |
-| F9 | Delete says "deleted" but nothing is deleted | P2 | built-wrong | LIVE | open |
-| F10 | The AI decides "confidence", although the spec gives a fixed rule | P2 | built-wrong | CODE | open |
-| F11 | Coverage updates that run at the same time can overwrite each other | P2 | built-wrong | RISK | open |
-| F12 | Transcript lines can be silently lost when the page is refreshed | P2 | built-wrong | RISK | open |
-| F13 | The live-monitor connection doesn't check the user's role | P2 | built-wrong | CODE | open |
-| F14 | "What does not count" is never sent to the AI for skills picked from the list | P2 | built-wrong | CODE | open |
-| F15 | The "what to ask next" hint ignores skills the candidate brought up | P2 | built-wrong | CODE | open |
-| F16 | Deployment files would set production up wrong | P2 | built-wrong | CODE | open |
-| F17 | Login security gaps | P2 | built-wrong | CODE | open |
-| F18 | Frontend and backend disagree on field types (shows "4" instead of "L4") | P3 | built-wrong | CODE | open |
-| F19 | A leftover sign-up page lets users choose to be "admin" | P3 | built-wrong | CODE | open |
-| F20 | Small UI issues | P3 | built-wrong | CODE | open |
-| F21 | Four pages silently swallow load errors, so a missing or forbidden record shows as an empty form (source ticket #2, closed "not planned", still present) | P2 | built-wrong | LIVE (API) + CODE | open |
+| F9 | Delete says "deleted" but nothing is deleted | P2 | built-wrong | LIVE | remaining |
+| F10 | The AI decides "confidence", although the spec gives a fixed rule | P2 | built-wrong | CODE | remaining |
+| F11 | Coverage updates that run at the same time can overwrite each other | P2 | built-wrong | RISK | remaining |
+| F12 | Transcript lines can be silently lost when the page is refreshed | P2 | built-wrong | RISK | remaining |
+| F13 | The live-monitor connection doesn't check the user's role | P2 | built-wrong | CODE | remaining |
+| F14 | "What does not count" is never sent to the AI for skills picked from the list | P2 | built-wrong | CODE | remaining |
+| F15 | The "what to ask next" hint ignores skills the candidate brought up | P2 | built-wrong | CODE | remaining |
+| F16 | Deployment files would set production up wrong | P2 | built-wrong | CODE | remaining |
+| F17 | Login security gaps | P2 | built-wrong | CODE | remaining |
+| F18 | Frontend and backend disagree on field types (shows "4" instead of "L4") | P3 | built-wrong | CODE | remaining |
+| F19 | A leftover sign-up page lets users choose to be "admin" | P3 | built-wrong | CODE | remaining |
+| F20 | Small UI issues | P3 | built-wrong | CODE | remaining |
+| F21 | Four pages silently swallow load errors, so a missing or forbidden record shows as an empty form (source ticket #2, closed "not planned", still present) | P2 | built-wrong | LIVE (API) + CODE | remaining |
 
 ---
 

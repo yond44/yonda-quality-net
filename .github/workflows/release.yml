@@ -1,0 +1,34 @@
+# Release gate: runs on every version tag (v1.0.0, v1.0.1, ...).
+# It re-runs the whole quality net on the tagged commit, then decides in one line
+# whether that version is RELEASABLE or BLOCKED (see .github/scripts/release-gate.mjs).
+# The verdict is the "Release status" check on the tag's commit and the run summary.
+name: Release gate
+run-name: "Release gate: ${{ github.ref_name }}"
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  net:
+    name: "Quality net"
+    uses: ./.github/workflows/ci.yml
+
+  release-status:
+    name: "Release status"
+    needs: net
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Decide releasable or blocked
+        env:
+          TAG: ${{ github.ref_name }}
+          NET_RESULT: ${{ needs.net.result }}
+        run: node .github/scripts/release-gate.mjs

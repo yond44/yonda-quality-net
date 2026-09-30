@@ -14,7 +14,7 @@ Everything runs in GitHub Actions: [`.github/workflows/ci.yml`](../.github/workf
 | Check (as named on GitHub) | What it protects | Catches (from the audit) |
 |---|---|---|
 | **Gate: Definition of Ready** *(pull requests only)* | No change merges without its inputs | M9 (tickets "done" with no change or test), and the brief's "ghost spec" problem |
-| **Gate: self-test** | The gate's own rules can't be silently weakened | A broken or loosened gate |
+| **Gate: self-test** | The two gates' own rules can't be silently weakened | A broken or loosened gate |
 | **Net: API boots in production mode** | The backend actually starts with production settings | **F22** (P0): production couldn't boot |
 | **Net: API tests (audit findings + critical paths)** | Data integrity and tenant isolation on the risk-carrying paths, plus the main journey | **F1–F8, F23**, and any regression on the critical path |
 | **Net: web tests, type-check and build** | The web app's risk-carrying logic, and that it compiles and builds | **F24**, plus type errors and broken builds in the frontend |
@@ -80,6 +80,20 @@ Knowing the gaps is part of the system. These are known and accepted for now:
 
 ---
 
+## The release gate
+
+A separate workflow, [`release.yml`](../.github/workflows/release.yml), runs **on every version tag** (`v1.0.0`, `v1.0.1`, ...). It's reusable for every release, not a one-off script.
+
+1. It re-runs the **whole quality net** on the tagged commit, reusing [`ci.yml`](../.github/workflows/ci.yml) rather than copying it.
+2. A final check, **"Release status"**, decides ([`release-gate.mjs`](../.github/scripts/release-gate.mjs)) and shows one line on the run page: **"✅ v1.0.0 is RELEASABLE"** or **"⛔ v1.0.0 is BLOCKED"**, with a table of the three conditions:
+   - the quality net passed on this commit;
+   - **no P0/P1 finding is left unfixed in the audit**. This is read from the Status column of [`01-audit.md`](01-audit.md), so a known blocker stops a release even if every test is green;
+   - `RELEASE_NOTES.md` has a section for this tag.
+
+Its rules are tested in [`release-gate.test.mjs`](../.github/scripts/release-gate.test.mjs), which runs in "Gate: self-test".
+
+To release: add a `## vX.Y.Z` section to `RELEASE_NOTES.md`, merge it, then push the tag (`git tag vX.Y.Z && git push origin vX.Y.Z`). Read the verdict on the tag's run.
+
 ## How to run it locally
 
 **Backend tests.** Needs PostgreSQL and the local setup from the API README:
@@ -99,9 +113,9 @@ RAILS_ENV=production SECRET_KEY_BASE=x ALLOWED_ORIGINS=http://x GEMINI_API_KEY=x
   bundle exec rails zeitwerk:check
 ```
 
-**Gate self-test, web tests and the web build:**
+**Gate self-tests, web tests and the web build:**
 ```bash
-node --test .github/scripts/definition-of-ready.test.mjs
+node --test .github/scripts/definition-of-ready.test.mjs .github/scripts/release-gate.test.mjs
 cd web && npm ci && npm test && npm run build
 ```
 
@@ -114,6 +128,8 @@ cd web && npm ci && npm test && npm run build
 - **Fakes for AI answers:** build a `FakePortfolioModel` with `levels:`, `rename:` or `omit:` to script how the "model" answers.
 
 ## Making the gate impossible to skip (one-time GitHub setting)
+
+**Status: enabled** on `main` (2026-09-30), with all five checks below required. Verified through GitHub's API. It was turned on after pull requests #1 and #2, which is why those two could still be merged with a red gate (see "The gate in action").
 
 A CI check only **blocks** a merge when GitHub is told it's required. This is a repository setting, so it can't be committed as code:
 

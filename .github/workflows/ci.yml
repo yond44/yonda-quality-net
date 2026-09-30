@@ -1,4 +1,5 @@
-# Quality net: runs on every push to main and every pull request.
+# Quality net: runs on every push to main and every pull request, and is reused by
+# the release gate on every version tag (.github/workflows/release.yml).
 # Each job is one check with a plain-language name; see assessment/02-quality-system.md.
 name: Quality net
 
@@ -7,6 +8,7 @@ on:
     branches: [main]
   pull_request:
     types: [opened, edited, synchronize, reopened]
+  workflow_call:
 
 permissions:
   contents: read
@@ -35,8 +37,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - name: Test the gate's own rules
-        run: node --test .github/scripts/definition-of-ready.test.mjs
+      - name: Test the gates' own rules
+        run: node --test .github/scripts/definition-of-ready.test.mjs .github/scripts/release-gate.test.mjs
 
   # ── Test net ─────────────────────────────────────────────────────────────────
   api-boot:
