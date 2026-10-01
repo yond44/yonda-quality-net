@@ -27,6 +27,9 @@ export function useAudioWebSocket({
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionEndedRef = useRef(false);
+  // Set when the page closes the connection itself (End Interview, time limit, leaving the
+  // page). Such a close is not a lost connection (audit F31).
+  const closedOnPurposeRef = useRef(false);
   const [connectionState, setConnectionState] = useState<"disconnected" | "connecting" | "connected">(
     "disconnected"
   );
@@ -35,6 +38,7 @@ export function useAudioWebSocket({
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     sessionEndedRef.current = false;
+    closedOnPurposeRef.current = false;
     setConnectionState("connecting");
     const url = token
       ? `${WS_URL}/ws/sessions/${sessionId}/audio?token=${token}`
@@ -121,6 +125,7 @@ export function useAudioWebSocket({
     ws.onclose = () => {
       setConnectionState("disconnected");
       if (sessionEndedRef.current) return; // session ended cleanly — do not reconnect
+      if (closedOnPurposeRef.current) return; // the page closed it: nothing was lost (audit F31)
       const attempt = reconnectAttemptsRef.current;
       if (attempt < RECONNECT_DELAYS.length) {
         onStateChange("reconnecting");
@@ -149,13 +154,14 @@ export function useAudioWebSocket({
 
   const disconnect = useCallback(() => {
     if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-    reconnectAttemptsRef.current = RECONNECT_DELAYS.length; // prevent reconnect
+    closedOnPurposeRef.current = true; // no reconnect, and not reported as "connection lost"
     wsRef.current?.close();
   }, []);
 
   useEffect(() => {
     return () => {
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      closedOnPurposeRef.current = true;
       wsRef.current?.close();
     };
   }, []);
