@@ -106,3 +106,58 @@ describe("F25: a lost connection is never shown to the candidate as a finished i
         expect(states).not.toContain("complete");
     });
 });
+
+// Audit F31: when the candidate ends the interview (End Interview, or the time limit),
+// the page closes the connection on purpose. The close handler took that for a failed
+// reconnect and reported "connection_lost" — "your interview has not ended" — on top of
+// the finished screen. A close the page asked for is not a lost connection.
+describe("F31: closing the connection on purpose is not a lost connection", () => {
+    beforeEach(() => {
+        FakeWebSocket.opened = [];
+        vi.useFakeTimers();
+        vi.stubGlobal("WebSocket", FakeWebSocket);
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.unstubAllGlobals();
+    });
+
+    function connectInterview() {
+        const states: string[] = [];
+        const { result } = renderHook(() =>
+            useAudioWebSocket({
+                sessionId: 7,
+                token: "invite-token",
+                onAudioChunk: () => {},
+                onTranscript: () => {},
+                onStateChange: (s) => states.push(s),
+                onSpeakerChange: () => {},
+            })
+        );
+        act(() => result.current.connect());
+        return { states, disconnect: () => result.current.disconnect() };
+    }
+
+    it("does not report 'connection_lost' after the page disconnects on purpose", () => {
+        const { states, disconnect } = connectInterview();
+        const socket = last(FakeWebSocket.opened);
+
+        act(() => disconnect());
+        act(() => socket.drops()); // the browser then reports the socket closed
+        act(() => vi.advanceTimersByTime(10_000));
+
+        expect(states).not.toContain("connection_lost");
+        expect(states).not.toContain("reconnecting");
+        expect(FakeWebSocket.opened).toHaveLength(1); // and it doesn't reconnect
+    });
+
+    it("still reconnects when the connection drops by itself (control)", () => {
+        const { states } = connectInterview();
+
+        act(() => last(FakeWebSocket.opened).drops());
+        act(() => vi.advanceTimersByTime(10_000));
+
+        expect(states).toContain("reconnecting");
+        expect(FakeWebSocket.opened.length).toBeGreaterThan(1);
+    });
+});
