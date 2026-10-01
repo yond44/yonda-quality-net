@@ -1,4 +1,38 @@
-# 03 — Release decision: v1.0.1 (supersedes v1.0.0)
+# 03 — Release decision: v1.0.2 (supersedes v1.0.1 and v1.0.0)
+
+## Update, 2026-10-01 (latest): ship v1.0.2
+
+**Decision: SHIP v1.0.2, with the conditions and accepted risks below. Do not roll out v1.0.1 or v1.0.0.**
+**Release owner:** yond44.
+
+**What happened after v1.0.1:**
+- **F30 (P1)**, found in live testing with the real AI: a skill had two ids in the portfolio prompt, so a real interview could end with no portfolio. Fixed test-first: red [36815953972](https://github.com/yond44/yonda-quality-net/actions/runs/36815953972), green [36816139679](https://github.com/yond44/yonda-quality-net/actions/runs/36816139679).
+- **An end-to-end test** was then run on the whole product: every API endpoint for two companies (65 checks), then a real Chrome driven by a script through the recruiter's and the candidate's journeys, including a real voice interview with the AI. It found three more P1s and one P3:
+  - **F31 (P1, a regression from the F25 fix):** a candidate who pressed End Interview, or ran out of time, was told "Connection lost — your interview has not ended". Red [36827787574](https://github.com/yond44/yonda-quality-net/actions/runs/36827787574), green [36827803414](https://github.com/yond44/yonda-quality-net/actions/runs/36827803414).
+  - **F32 (P1):** the PDF export failed (500) for every portfolio a recruiter had overridden. Red [36827823866](https://github.com/yond44/yonda-quality-net/actions/runs/36827823866), green [36827849551](https://github.com/yond44/yonda-quality-net/actions/runs/36827849551).
+  - **F33 (P1):** on a form with several skills, clicking one skill's level text changed another skill's level, so a vacancy could be saved with wrong required levels. Red [36827870194](https://github.com/yond44/yonda-quality-net/actions/runs/36827870194), green [36827898429](https://github.com/yond44/yonda-quality-net/actions/runs/36827898429).
+  - **F34 (P3):** the live monitor of a finished interview still says "Live". Accepted below.
+- After the fixes, the same end-to-end test passed in full (API 65/65; browser journeys 7/7, 9/9, 10/10).
+- **The release gate on v1.0.2 says ✅ RELEASABLE:** [36828232430](https://github.com/yond44/yonda-quality-net/actions/runs/36828232430). Every net check passed on the tagged commit, no P0/P1 is left unfixed in the audit, and the release notes describe v1.0.2.
+
+**Conditions (in addition to v1.0.1's and v1.0.0's, below):**
+- **Restart every background worker when deploying.** In testing, a worker started before a fix kept running the old code and reproduced F30.
+- **Ship the PDF font files** (`api/vendor/fonts/`) with the backend.
+- **Re-check the required levels of every vacancy saved before v1.0.2** (F33): a level may have landed on the wrong skill, and the data can't show which.
+- **Run the end-to-end test before every release.** It needs running servers, a browser and the real AI, so it isn't part of CI; it is what found F31–F33 after every unit check was green.
+
+**Extra accepted risks, owner yond44:**
+- **F34 (P3):** the monitor of a finished interview says "Live" and shows no "ended" banner. The data and the portfolio link are correct.
+- **PDF limits (F32):** emoji and Chinese/Japanese characters print as blank boxes; Arabic isn't laid out right to left.
+- **Silent export failures:** the web's export buttons show no message if an export fails for another reason (the F21 pattern; F21 is first in line for the next version).
+- **Not run live:** interviews that end on "all covered" or at the time limit. Unit tests cover both paths (F6, F31), but the free AI quota didn't allow long live interviews.
+
+**The count:** all **17** P0/P1 findings are fixed (F22, F1, F2, F23, F3, F24, F4, F5, F25, F6, F7, F26, F28, F30, F31, F32, F33). **14** P2/P3 remain (F9–F21, F34).
+
+**What this release shows about the net:** two of the four new P1s were regressions of my own fixes (F30 from F7, F31 from F25). In both cases the fix was right for the case it targeted and wrong for a path its tests didn't exercise, and in both cases a test against the real thing (the real AI, a real browser) caught it, not the unit net. That's why running the end-to-end test before a release is now a condition, not an extra.
+
+---
+
 
 ## Update, 2026-10-01 (later): v1.0.1 is not shippable either
 
