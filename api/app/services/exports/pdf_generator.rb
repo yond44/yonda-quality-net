@@ -16,6 +16,17 @@ module Exports
       'not_assessed' => 'Not Assessed'
     }.freeze
 
+    # A Unicode TrueType font. PDF's built-in fonts only encode Windows-1252, so any other
+    # character (the override arrow, or AI text such as "≥") crashed the export (audit F32).
+    # With a TrueType font a character the font lacks is drawn as a blank box, never an error.
+    FONT_DIR = Rails.root.join('vendor/fonts')
+    FONT_FAMILY = {
+      'DejaVuSans' => {
+        normal: FONT_DIR.join('DejaVuSans.ttf').to_s,
+        bold:   FONT_DIR.join('DejaVuSans-Bold.ttf').to_s
+      }
+    }.freeze
+
     def initialize(portfolio:, vacancy: nil)
       @portfolio   = portfolio
       @vacancy     = vacancy
@@ -27,6 +38,8 @@ module Exports
     # Returns PDF binary string.
     def call
       Prawn::Document.new(page_size: 'A4', margin: [40, 50, 40, 50]) do |pdf|
+        pdf.font_families.update(FONT_FAMILY)
+        pdf.font('DejaVuSans')
         render_header(pdf)
         render_portfolio_section(pdf)
         render_fit_gap_section(pdf) if @fit_gap
