@@ -92,6 +92,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F24 | The pre-interview internet check blocks candidates whose connection is good enough (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F25 | A dropped connection tells the candidate "Interview Complete", and the interview stays "Live" forever (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F26 | The AI sometimes never opens the interview; the candidate is stuck in silence with a muted mic (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
+| F28 | A skill with no evidence still gets a level (L1), so the hiring record shows a grade nobody earned (found in manual review, after v1.0.0) | **P1** | built-wrong | LIVE + TEST | remaining |
 | F27 | The AI can read its hidden notes aloud, and the transcript hides it from the recruiter (found in manual testing) | P2 | built-wrong | LIVE + TEST | **fixed** |
 | F8 | "Required" column in the fit/gap table is always empty | P2 | built-wrong | LIVE | **fixed** |
 | F9 | Delete says "deleted" but nothing is deleted | P2 | built-wrong | LIVE | remaining |
@@ -543,6 +544,32 @@ Connections drop in normal use: a candidate's Wi-Fi, a server restart during a d
 
 ---
 
+### F28 — A skill with no evidence still gets a level · P1 · LIVE + TEST
+
+*Found in a manual review of the portfolios, after v1.0.0 was tagged.*
+
+**Impact:**
+- An interview that **crashed before anyone spoke** still got a **"complete" portfolio** with **L1** for a skill nobody discussed (sessions 4 and 5 locally). The coverage data said the skill was never probed.
+- A candidate can be **rejected** because our system failed. For a junior role that requires L1, an untested skill would even show as a **match**.
+- The record looks normal. Nothing tells the recruiter the level has no evidence behind it.
+
+**What goes wrong:**
+- The levels are L1–L5, and **there's no way to say "not enough evidence"**. The database requires a level for every skill ([`schema.rb`](../api/db/schema.rb), `portfolio_skills.ai_level` is `NOT NULL`, 1–5).
+- The generator asks the AI to grade every configured skill, even when the candidate **never said anything** ([`generator.rb`](../api/app/services/portfolios/generator.rb)).
+- The level range is only a request in the prompt. Nothing enforces it, so the AI can answer outside it.
+- **Live (session 7):** the candidate said *"I don't understand anything at all."* The AI answered **level 0**, its way of saying "below the scale". The F5 check correctly refused it, but the automatic retry then got **L1**, and the portfolio became "complete".
+- **The web has the same silent-L1 bug as F5:** `parseLevel` turns anything it can't read into 1, and crashes on a missing level ([`constants.ts:4-8`](../web/src/utils/constants.ts#L4-L8)).
+
+**Why P1:** it looks like it works, but the stored grade is invented. That's data integrity on a hiring record.
+
+> **In plain words:** a teacher grading A–E gets a blank exam paper. "F" isn't allowed, so the paper goes back, and the second time the teacher writes "E". The record now says the student earned an E on a test they never answered.
+
+**Tests written before the fix** (they fail on the current code; each file has a passing control):
+- [`f28_no_evidence_spec.rb`](../api/spec/services/f28_no_evidence_spec.rb): a never-answered interview is "not assessed", without asking the AI; the AI's own "not_assessed" is kept; fit/gap shows `not_assessed`, not a gap; a recruiter can still set a level by hand.
+- [`constants.test.ts`](../web/src/utils/constants.test.ts) and [`LevelBadge.test.tsx`](../web/src/components/portfolio/LevelBadge.test.tsx): a missing or unreadable level is never shown as L1, and the badge says "Not assessed".
+
+---
+
 ### F8 — "Required" column in the fit/gap table is always empty · P2 · LIVE
 
 **Impact:**
@@ -718,6 +745,7 @@ These aren't bugs in the code. **Nobody defined them**, so nobody can say what "
 | M8 | **The public repo names the original company** | The imported code mentions it **50 times in 26 files**, plus internal cloud project, server and domain names (in `api/k8s/*`, `web/vercel.json`, READMEs and comments). That's an information leak, and it goes against the brief's "don't name the company" rule. **Fixed:** every identifier was replaced across **all of the history** (not only the latest commit), so no old commit still contains one. |
 | M9 | **No rule that a ticket needs a linked change and a test before it's closed** | In the source tracker, ticket #1 was closed as "completed" with no code change, and ticket #2 was closed while the bug still exists. So the tracker says "done" while the code says otherwise. This is exactly what the Definition-of-Done gate in Task 2 must prevent. |
 | M10 | **No defined minimum connection for the interview** | The pre-interview check blocks candidates below 8 Mbps download and 4 Mbps upload. No spec gives these numbers, and they don't match what the interview uses (F24). It's also undefined what should happen when the check **can't measure** at all: block the candidate, warn them, or let them through. Nobody can test F24's fix against a rule that doesn't exist. |
+| M11 | **No rule for what to record when a skill has no evidence**, or when the candidate is below L1 | The spec defines only L1–L5. Its one example of thin evidence still gives a level ("insufficient signal" → L2). *Decided for the F28 fix: no evidence means **not assessed** (no level), and a recruiter can still set a level by hand. A separate "below L1" outcome is left to the product owner.* |
 
 ---
 
@@ -799,6 +827,7 @@ The first version of this file covered only part of the code. Here's where each 
 | — | **F25** | Found during manual testing: a failed live connection showed "Interview Complete" while the recruiter's monitor kept showing "Live" |
 | — | **F26** | Found during manual testing: the AI never answered the start message; the candidate was stuck with "AI speaking" and a muted mic |
 | — | **F27** | Found during manual testing: the AI's speech began with its hidden-notes tag; the instructions name a different tag than the app sends |
+| — | **F28, M11** | Found in a manual review after v1.0.0: crashed interviews had "complete" portfolios with L1, and the AI's own "level 0" became L1 on a retry |
 | F6 | **F6** | Re-reproduced in a normal live interview: the AI said goodbye early and the session was saved `all_covered` with its only skill `not_yet` |
 | F17 bullet "company chosen from unchecked data" | **F23** (P1) | Found while fixing F2: exploiting it gave full read and write access to another company. Re-ranked from P2 to P1. |
 
