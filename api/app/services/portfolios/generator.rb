@@ -48,15 +48,15 @@ module Portfolios
 
     def build_prompt
       assessment       = @session.assessment
-      configured_skills = assessment.assessment_skills.order(:display_order)
+      configured_skills = assessment.assessment_skills.order(:display_order).to_a
       coverage_maps     = @session.coverage_maps.order(:id)
       turns             = @session.transcript_turns.ordered
 
       skills_text = configured_skills.map { |s| skill_definition_block(s) }.join("\n\n")
 
       coverage_json = {
-        skills:     coverage_maps.reject(&:is_discovered).map { |m| coverage_json(m) },
-        discovered: coverage_maps.select(&:is_discovered).map { |m| coverage_json(m) }
+        skills:     coverage_maps.reject(&:is_discovered).map { |m| coverage_json(m, configured_skills) },
+        discovered: coverage_maps.select(&:is_discovered).map { |m| coverage_json(m, configured_skills) }
       }.to_json
 
       transcript_text = turns.map { |t| "[#{t.speaker.upcase}]: #{t.text}" }.join("\n")
@@ -151,14 +151,28 @@ module Portfolios
       lines.join("\n")
     end
 
-    def coverage_json(map)
+    def coverage_json(map, configured_skills)
       {
-        id:          map.skill_id || map.skill_label.downcase.gsub(/\s+/, '-'),
+        id:          coverage_id(map, configured_skills),
         label:       map.skill_label,
         state:       map.state,
         probe_count: map.probe_count,
         is_discovered: map.is_discovered
       }
+    end
+
+    # One id per skill across the whole prompt: a configured skill's coverage entry uses the
+    # same reference as the skill list ("S12"), so whichever one the AI copies maps back
+    # to the skill (audit F30). Discovered skills aren't configured and keep their own id.
+    def coverage_id(map, configured_skills)
+      unless map.is_discovered
+        skill = configured_skills.find do |s|
+          (map.skill_id.present? && s.skill_id == map.skill_id) || s.skill_label.casecmp?(map.skill_label)
+        end
+        return skill_ref(skill) if skill
+      end
+
+      map.skill_id || map.skill_label.downcase.gsub(/\s+/, '-')
     end
 
     def save_skills(portfolio, response)

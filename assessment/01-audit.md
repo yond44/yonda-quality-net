@@ -6,7 +6,7 @@
 1. I read the code and compared it to the specs.
 2. I ran the whole app on my machine and **reproduced the main problems for real**. Each finding below says how to reproduce it.
 
-**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25, F6, F7, F26, F27, F8 and F28 are `fixed`. Everything else is `remaining`: a conscious call for this release, with owners in [`03-release-decision.md`](03-release-decision.md).
+**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25, F6, F7, F26, F27, F8, F28 and F30 are `fixed`. Everything else is `remaining`: a conscious call for this release, with owners in [`03-release-decision.md`](03-release-decision.md).
 
 ---
 
@@ -93,7 +93,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F25 | A dropped connection tells the candidate "Interview Complete", and the interview stays "Live" forever (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F26 | The AI sometimes never opens the interview; the candidate is stuck in silence with a muted mic (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F28 | A skill with no evidence still gets a level (L1), so the hiring record shows a grade nobody earned (found in manual review, after v1.0.0) | **P1** | built-wrong | LIVE + TEST | **fixed** |
-| F30 | Portfolios fail with the real AI: the F7 fix gives a skill two different ids in the prompt (found in live testing, after v1.0.1) | **P1** | built-wrong | LIVE + TEST | remaining |
+| F30 | Portfolios fail with the real AI: the F7 fix gives a skill two different ids in the prompt (found in live testing, after v1.0.1) | **P1** | built-wrong | LIVE + TEST | **fixed** |
 | F27 | The AI can read its hidden notes aloud, and the transcript hides it from the recruiter (found in manual testing) | P2 | built-wrong | LIVE + TEST | **fixed** |
 | F8 | "Required" column in the fit/gap table is always empty | P2 | built-wrong | LIVE | **fixed** |
 | F9 | Delete says "deleted" but nothing is deleted | P2 | built-wrong | LIVE | remaining |
@@ -603,7 +603,15 @@ Connections drop in normal use: a candidate's Wi-Fi, a server restart during a d
 
 > **In plain words:** each guest gets a numbered ticket at the door, but the seating chart lists them by nickname. When a waiter writes down a nickname instead of a ticket number, the kitchen says "no such guest" and the order is cancelled.
 
-**Tests written before the fix** ([`f30_one_skill_id_spec.rb`](../api/spec/services/f30_one_skill_id_spec.rb)): the portfolio must still be built when the AI copies the coverage id; and each skill must have the same id in the skill list and in the coverage data.
+**Status: fixed.**
+- **Test first:** [`f30_one_skill_id_spec.rb`](../api/spec/services/f30_one_skill_id_spec.rb) was pushed without a fix, and CI went red. Both checks failed and now pass, unchanged:
+  - with a fake AI that copies the coverage id (as the real one did), the portfolio is still built;
+  - a **contract check**: each configured skill has the same id in the skill list and in the coverage data.
+- **The fix:** **one id per skill across the whole prompt.** A configured skill's entry in the coverage data now uses the same reference as the skill list (`S12`), so whichever one the AI copies maps back to the skill ([`generator.rb`](../api/app/services/portfolios/generator.rb), `coverage_id`). Discovered skills aren't configured, so they keep their own id.
+- **Checked with the real AI:** session 11's portfolio, which had failed live, was regenerated with the real model and now completes (React / Frontend Development Core: L2, low confidence).
+
+**What remains after the fix (disclosed, not hidden):**
+- **The AI could still return an id that matches nothing.** That would still fail loudly, on purpose: the alternative is guessing which skill it meant. Enforcing the answer format with Gemini's response schema (see F28) would close this fully.
 
 ---
 
