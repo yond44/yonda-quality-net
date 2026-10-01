@@ -1,5 +1,13 @@
 # 03 — Release decision: v1.0.1 (supersedes v1.0.0)
 
+## Update, 2026-10-01 (later): v1.0.1 is not shippable either
+
+Live testing with the real AI after v1.0.1 found **F30 (P1)**: the F7 fix gave each skill two different ids in the portfolio prompt. When the AI copied the wrong one, the portfolio failed (session 11). It's fixed on `main`, test-first: red [36815953972](https://github.com/yond44/yonda-quality-net/actions/runs/36815953972), green [36816139679](https://github.com/yond44/yonda-quality-net/actions/runs/36816139679). The real AI regenerated session 11's portfolio successfully afterwards.
+
+**Decision: don't ship v1.0.1. The next release (v1.0.2) must go through the release gate first.** The section below explains the v1.0.1 decision as it was made, before F30 was known.
+
+---
+
 ## Update, 2026-10-01: ship v1.0.1, not v1.0.0
 
 **Decision: SHIP v1.0.1, with the conditions and accepted risks below. Do not roll out v1.0.0.**

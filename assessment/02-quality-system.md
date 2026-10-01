@@ -56,7 +56,7 @@ One spec file per **class of risk**, not a coverage percentage:
 | [`f26_opening_watchdog_spec.rb`](../api/spec/clients/f26_opening_watchdog_spec.rb) | **F26** the AI never opens the interview and the candidate is stuck muted | If the AI hasn't answered the start message in time it is asked again, then the turn goes back to the candidate; nothing happens once the AI talks |
 | [`f27_hidden_notes_spec.rb`](../api/spec/services/f27_hidden_notes_spec.rb) | **F27** the AI reads its hidden notes aloud, and the record hides it | The notes are sent under the tag the AI's instructions name (read from the real instructions); a slip is marked in the recruiter's transcript |
 | [`f28_no_evidence_spec.rb`](../api/spec/services/f28_no_evidence_spec.rb), [`constants.test.ts`](../web/src/utils/constants.test.ts) and [`LevelBadge.test.tsx`](../web/src/components/portfolio/LevelBadge.test.tsx) | **F28** a skill with no evidence gets a level | No answers → "not assessed" without asking the AI; the AI's "not_assessed" is kept; fit/gap and the page show "not assessed", never L1 |
-| **F30** portfolios fail when the AI copies the coverage id *(found in live testing, after v1.0.1)* | the `test(F30)` commit's run: 2/2 failing | the `fix(F30)` commit's run | One id per skill across the prompt: the coverage data uses the same `S12` reference as the skill list |
+| **F30** portfolios fail when the AI copies the coverage id *(found in live testing, after v1.0.1)* | [36815953972](https://github.com/yond44/yonda-quality-net/actions/runs/36815953972): 2/2 failing | [36816139679](https://github.com/yond44/yonda-quality-net/actions/runs/36816139679) (F30 no longer flagged) | One id per skill across the prompt: the coverage data uses the same `S12` reference as the skill list |
 | [`f30_one_skill_id_spec.rb`](../api/spec/services/f30_one_skill_id_spec.rb) | **F30** portfolios fail when the AI copies a different id | A fake AI that copies the coverage id (as the real one did) still gets a portfolio; each skill has one id across the prompt |
 | [`critical_path_spec.rb`](../api/spec/requests/critical_path_spec.rb) | **Regression on the main journey** | Log in → assessment → invite → candidate opens it; interview → portfolio → fit/gap |
 
@@ -693,7 +693,7 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
 
 ### F30: portfolios failed with the real AI, because a skill had two ids in the prompt (P1, found in live testing after v1.0.1)
 
-- **Red:** the `test(F30)` commit's run, 2/2 failing.
+- **Red:** [36815953972](https://github.com/yond44/yonda-quality-net/actions/runs/36815953972), 2/2 failing.
 - **Root cause:** a regression from the F7 fix. F7 gave each configured skill a reference in the prompt's skill list (`S12`) and mapped answers back through it. But the coverage data in the same prompt still used the catalogue id or a name slug, so the AI saw **two ids for one skill**. When it copied the coverage one, the answer was rejected as an unknown skill, and after 3 retries there was no portfolio. The F7 tests missed it because their fake AI always copied the reference.
 - **Files changed:**
   - [`generator.rb:51`](../api/app/services/portfolios/generator.rb#L51) and [`:58-59`](../api/app/services/portfolios/generator.rb#L58-L59): the configured skills are passed to the coverage data
@@ -712,7 +712,7 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - **Remove the second id rather than accept both.** Accepting either id would hide the inconsistency. One id per skill means there's nothing to choose between.
   - **A contract test,** so if either part of the prompt changes its ids again, CI goes red.
   - **Checked with the real AI,** because the fake AI is what let this through in the first place.
-- **Green:** the `fix(F30)` commit's run.
+- **Green:** [36816139679](https://github.com/yond44/yonda-quality-net/actions/runs/36816139679) (F30 no longer flagged).
 
 ## Assumptions
 
