@@ -1,4 +1,29 @@
-# 03 — Release decision: v1.0.0
+# 03 — Release decision: v1.0.1 (supersedes v1.0.0)
+
+## Update, 2026-10-01: ship v1.0.1, not v1.0.0
+
+**Decision: SHIP v1.0.1, with the conditions and accepted risks below. Do not roll out v1.0.0.**
+**Release owner:** yond44.
+
+**What happened after v1.0.0 was tagged:**
+- A manual review of the generated portfolios found **F28 (P1)**: a skill with no evidence still got a level. Interviews that crashed before anyone spoke had "complete" portfolios with **L1** for a skill nobody discussed. When the AI tried to say "below the scale" (level 0), a retry turned it into L1.
+- Recording F28 as *remaining* in the audit made the release gate **block the next version**. Run locally, it said *"⛔ v1.0.1 is BLOCKED — F28 (P1, remaining)"*. That's the gate doing its job: a known P1 stops a release even when every test is green.
+- F28 was then fixed test-first, with CI red by itself ([run 36812383367](https://github.com/yond44/yonda-quality-net/actions/runs/36812383367)) and then green ([run 36812959237](https://github.com/yond44/yonda-quality-net/actions/runs/36812959237)). A skill with no evidence is now **"not assessed"**, never given a level.
+- **The release gate on v1.0.1 says ✅ RELEASABLE:** [run 36813056953](https://github.com/yond44/yonda-quality-net/actions/runs/36813056953).
+
+**Why this matters:** v1.0.0 was marked releasable because the gate can only check what's known. The P1 was found by a human reviewing real output, which is why the conditions below keep a manual check of the first clients' results.
+
+**Everything below (the v1.0.0 decision) still applies to v1.0.1**, plus three additions:
+- **Extra condition:** after deploying, **regenerate the portfolios of interviews with no candidate answers**. Ones generated before v1.0.1 may show an invented level.
+- **Extra accepted risks (F28 leftovers), owner yond44:**
+  - "below L1" isn't its own outcome; it's recorded as "not assessed" with the AI's reason (product decision M11);
+  - the AI's answer format is requested in the prompt but not yet enforced with Gemini's response schema;
+  - the existing invented levels stay until regenerated (covered by the condition above).
+- **The count:** all **13** P0/P1 findings are fixed (F28 included).
+
+---
+
+## The v1.0.0 decision (kept for the record)
 
 **Decision: SHIP v1.0.0, with the conditions and accepted risks below.**
 **Release owner:** yond44. I'm accountable for this call and for the engineering risks listed.

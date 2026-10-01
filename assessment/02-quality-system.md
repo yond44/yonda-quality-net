@@ -185,7 +185,7 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 | **F27** the AI reads its hidden notes aloud, and the record hides it *(found in manual testing)* | [36666018100](https://github.com/yond44/yonda-quality-net/actions/runs/36666018100): 2/3 failing | [36666047243](https://github.com/yond44/yonda-quality-net/actions/runs/36666047243) (F27 no longer flagged) | Notes are sent under the tag the AI is told to keep silent; a slip is marked in the recruiter's transcript |
 | **F8** "Required" column always empty | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 3/3 failing | [#1](https://github.com/yond44/yonda-quality-net/pull/1) [36667125182](https://github.com/yond44/yonda-quality-net/actions/runs/36667125182) (all tests green) and `main` after the merge [36667342497](https://github.com/yond44/yonda-quality-net/actions/runs/36667342497) | The comparison also carries `required_level` and `is_override`; old reports get `required_level` filled in when read |
 | **F25 follow-up** a server error while opening the interview shown as "Interview Complete" | [#3](https://github.com/yond44/yonda-quality-net/pull/3) [36668038365](https://github.com/yond44/yonda-quality-net/actions/runs/36668038365): the new web and API checks failing | [#3](https://github.com/yond44/yonda-quality-net/pull/3) [36668170107](https://github.com/yond44/yonda-quality-net/actions/runs/36668170107) | The server reports an already-ended session as ended; any other failure shows "Something went wrong" |
-| **F28** a skill with no evidence gets a level *(found in manual review, after v1.0.0)* | [36812383367](https://github.com/yond44/yonda-quality-net/actions/runs/36812383367): API 4/5 + 3 web checks failing | the `fix(F28)` commit's run | No evidence means "not assessed" (no level): never-answered interviews skip the AI; the AI may answer `not_assessed`; fit/gap and the page say so |
+| **F28** a skill with no evidence gets a level *(found in manual review, after v1.0.0)* | [36812383367](https://github.com/yond44/yonda-quality-net/actions/runs/36812383367): API 4/5 + 3 web checks failing | [36812959237](https://github.com/yond44/yonda-quality-net/actions/runs/36812959237) (F28 no longer flagged) | No evidence means "not assessed" (no level): never-answered interviews skip the AI; the AI may answer `not_assessed`; fit/gap and the page say so |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
 
@@ -687,7 +687,7 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - **Don't ask the AI when the candidate never answered.** There's nothing to grade, and asking invites an invented level.
   - **Give the AI an honest option** (`"not_assessed"`) instead of forcing a 1–5 number. The live run showed it was already trying to say exactly that (level 0).
   - **Recruiters stay in control:** a not-assessed skill can still be given a level by hand.
-- **Green:** the `fix(F28)` commit's run.
+- **Green:** [36812959237](https://github.com/yond44/yonda-quality-net/actions/runs/36812959237) (F28 no longer flagged). Then the release gate on `v1.0.1`: [36813056953](https://github.com/yond44/yonda-quality-net/actions/runs/36813056953), **RELEASABLE**.
 
 ## Assumptions
 
