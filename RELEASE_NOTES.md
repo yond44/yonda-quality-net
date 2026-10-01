@@ -1,5 +1,30 @@
 # Release notes
 
+## v1.0.2
+
+*Fixes four P1 findings found after v1.0.1: one in live testing with the real AI (F30), three in an end-to-end test with a real browser and a real interview (F31–F33). Use this version instead of v1.0.1 and v1.0.0.*
+
+### What this version delivers
+
+- **F30: portfolios are built with the real AI.** Each skill has one id across the portfolio prompt, so the AI can't copy a second id that the answer check rejects. (v1.0.1 could fail to build a portfolio for a real interview.)
+- **F31: a candidate who ends the interview is told it's complete.** Pressing End Interview, or running out of time, no longer shows "Connection lost — your interview has not ended". A connection that really drops still offers to reconnect.
+- **F32: the PDF export works for every portfolio.** It no longer fails for a portfolio a recruiter has overridden, or for AI text with symbols such as "→" or "≥". The PDF uses a Unicode font (DejaVu Sans, shipped with the backend).
+- **F33: choosing a level changes only the skill it belongs to.** On forms with several skills (vacancies, assessments), clicking the level text of one skill no longer changes another skill's level.
+- Everything in v1.0.1 and v1.0.0.
+
+### Before deploying (required)
+
+- Everything listed for v1.0.1 and v1.0.0 below. This version adds **no migration**.
+- **Restart every background worker (Sidekiq) when deploying.** A worker started before the deploy keeps running the old code: in testing, an old worker reproduced F30 after it was fixed.
+- **Ship the font files** in `api/vendor/fonts/` with the backend (they're in the repo; check that the deploy image doesn't strip them).
+- **Re-check the required levels of every vacancy created or edited before this version** (F33). A level may have been saved on the wrong skill, and nothing in the data shows which.
+
+### Known issues in this version
+
+- **14 lower-severity findings remain** (P2/P3: F9–F21 and F34, the live monitor of a finished interview still saying "Live"). Each is listed with a mitigation and an owner in the release decision.
+- **PDF limits (F32):** emoji and Chinese/Japanese characters print as blank boxes, and Arabic isn't laid out right to left. The web's export buttons still show no message if an export fails for another reason (the F21 pattern).
+- **The end-to-end test is not part of CI.** It needs running servers, a browser and the real AI, so it's run before a release (scripts and results are described in `assessment/01-audit.md`, "How I verified"). Long interviews that end on "all covered" or at the 10-minute limit were not run live; unit tests cover those paths.
+
 ## v1.0.1
 
 *Fixes a P1 found in a manual review after v1.0.0 was tagged. Use this version instead of v1.0.0.*
