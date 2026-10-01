@@ -6,7 +6,7 @@
 1. I read the code and compared it to the specs.
 2. I ran the whole app on my machine and **reproduced the main problems for real**. Each finding below says how to reproduce it.
 
-**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25, F6, F7, F26, F27, F8, F28 and F30 are `fixed`. Everything else is `remaining`: a conscious call for this release, with owners in [`03-release-decision.md`](03-release-decision.md).
+**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25, F6, F7, F26, F27, F8, F28, F30, F31, F32 and F33 are `fixed`. Everything else is `remaining`: a conscious call for this release, with owners in [`03-release-decision.md`](03-release-decision.md).
 
 ---
 
@@ -94,6 +94,9 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F26 | The AI sometimes never opens the interview; the candidate is stuck in silence with a muted mic (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F28 | A skill with no evidence still gets a level (L1), so the hiring record shows a grade nobody earned (found in manual review, after v1.0.0) | **P1** | built-wrong | LIVE + TEST | **fixed** |
 | F30 | Portfolios fail with the real AI: the F7 fix gives a skill two different ids in the prompt (found in live testing, after v1.0.1) | **P1** | built-wrong | LIVE + TEST | **fixed** |
+| F31 | A candidate who ends the interview (End Interview, or the time limit) is told "Connection lost, your interview has not ended" (found in the end-to-end browser test; a regression from the F25 fix) | **P1** | built-wrong | LIVE + TEST | **fixed** |
+| F32 | The PDF export fails (500) for every portfolio a recruiter has overridden, and the PDF button does nothing (found in the end-to-end test) | **P1** | built-wrong | LIVE + TEST | **fixed** |
+| F33 | Clicking a level's label on the second skill of a form changes the **first** skill's level, so a vacancy can be saved with the wrong required levels (found in the end-to-end browser test) | **P1** | built-wrong | LIVE + TEST | **fixed** |
 | F27 | The AI can read its hidden notes aloud, and the transcript hides it from the recruiter (found in manual testing) | P2 | built-wrong | LIVE + TEST | **fixed** |
 | F8 | "Required" column in the fit/gap table is always empty | P2 | built-wrong | LIVE | **fixed** |
 | F9 | Delete says "deleted" but nothing is deleted | P2 | built-wrong | LIVE | remaining |
@@ -108,6 +111,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F18 | Frontend and backend disagree on field types (shows "4" instead of "L4") | P3 | built-wrong | CODE | remaining |
 | F19 | A leftover sign-up page lets users choose to be "admin" | P3 | built-wrong | CODE | remaining |
 | F20 | Small UI issues | P3 | built-wrong | CODE | remaining |
+| F34 | The live monitor of a finished interview still says "Live" and shows no "Session ended" banner (found in the end-to-end browser test) | P3 | built-wrong | LIVE | remaining |
 | F21 | Four pages silently swallow load errors, so a missing or forbidden record shows as an empty form (source ticket #2, closed "not planned", still present) | P2 | built-wrong | LIVE (API) + CODE | remaining |
 
 ---
@@ -613,6 +617,93 @@ Connections drop in normal use: a candidate's Wi-Fi, a server restart during a d
 **What remains after the fix (disclosed, not hidden):**
 - **The AI could still return an id that matches nothing.** That would still fail loudly, on purpose: the alternative is guessing which skill it meant. Enforcing the answer format with Gemini's response schema (see F28) would close this fully.
 
+
+---
+
+### F31 — A candidate who ends the interview is told "Connection lost" · P1 · LIVE + TEST
+
+*A regression introduced by the F25 fix. Found in the end-to-end browser test (2026-10-01).*
+
+**Impact:** at the end of an interview, the candidate reads **"Connection lost. Your interview has not ended. Check your internet connection, then reconnect to continue."**, although the server has recorded the interview as finished. This happens on two of the three ways an interview ends: the candidate presses **End Interview**, or the **time limit** runs out. Only pressing "Reconnect" (which reloads the page) shows that it's complete. The recorded data is correct.
+
+**What goes wrong:**
+- Ending the interview calls `disconnect()`, which stops reconnecting by setting the attempt counter to its maximum, then closes the connection ([`useAudioWebSocket.ts:150-154`](../web/src/hooks/useAudioWebSocket.ts#L150-L154)).
+- When the browser reports the close, the close handler sees "no attempts left" and treats it as a failed reconnect ([`useAudioWebSocket.ts:121-134`](../web/src/hooks/useAudioWebSocket.ts#L121-L134)).
+- Before F25, that branch reported "complete", which happened to be right here. The F25 fix changed it to "connection_lost" for real failures, without telling it apart from a close the page asked for.
+- Both endings go through the same function ([`InterviewPage.tsx:174-182`](../web/src/pages/interview/InterviewPage.tsx#L174-L182); the timer at [`:300`](../web/src/pages/interview/InterviewPage.tsx#L300)).
+
+**Why the tests didn't catch it:** the F25 tests checked a dropped connection and a server end, but not the page closing the connection itself.
+
+**Evidence:**
+1. **Live (browser, session 17):** the candidate pressed End Interview; the server saved the session `ended / manual_candidate`; the page showed "Connection lost … Reconnect".
+2. **Tests (written before any fix, failing):** [`useAudioWebSocket.test.ts`](../web/src/hooks/useAudioWebSocket.test.ts) (F31 block) and [`InterviewEnd.test.tsx`](../web/src/pages/interview/InterviewEnd.test.tsx): after End Interview, and after the time runs out, the page shows "Connection lost" instead of "Interview Complete". The controls (a real drop still reconnects and still ends on "Connection lost") pass.
+
+> **In plain words:** the candidate hangs up, and the phone says "call dropped, please call back".
+
+**Status: fixed.**
+- **Test first:** the F31 checks were pushed without a fix and CI went red ([36827787574](https://github.com/yond44/yonda-quality-net/actions/runs/36827787574)): after End Interview, and after the time ran out, the page showed "Connection lost". They now pass, unchanged. The controls (a real drop still reconnects, then shows "Connection lost") stayed green. Green after the fix: [36827803414](https://github.com/yond44/yonda-quality-net/actions/runs/36827803414).
+- **The fix:** the page now says when it closes the connection itself. `disconnect()` sets a "closed on purpose" flag, and the close handler ignores a close the page asked for, instead of reading it as "reconnects ran out" ([`useAudioWebSocket.ts`](../web/src/hooks/useAudioWebSocket.ts)).
+- **Checked in the browser:** End Interview now shows "Interview Complete — the interview has been recorded" (live interview, session 19).
+
+---
+
+### F32 — The PDF export fails for every overridden portfolio · P1 · LIVE + TEST
+
+*Present since the original import. Found in the end-to-end test (2026-10-01).*
+
+**Impact:** once a recruiter overrides a level (a normal step on the portfolio page), the **PDF export of that portfolio fails with a server error (500)**. The web's PDF button then does nothing and shows no message. The only workaround is the JSON export. Any AI text with a character outside the PDF font's set (an arrow, "≥") in an evidence quote fails the same way.
+
+**What goes wrong:**
+- The PDF uses the PDF format's built-in fonts, which only encode Windows-1252 characters.
+- The override line prints `"(AI: L2 → Override: L4)"` ([`pdf_generator.rb:86`](../api/app/services/exports/pdf_generator.rb#L86)). The `→` is not in that set, so the PDF library raises `Prawn::Errors::IncompatibleStringEncoding`.
+- The web's export handler has no error branch, so the failure is silent ([`PortfolioPage.tsx`](../web/src/pages/portfolio/PortfolioPage.tsx), `handleExport`).
+
+**Evidence:**
+1. **Live (browser):** export PDF before an override: a valid PDF. Override React L2 → L4, export again: `GET /portfolios/16/export?format=pdf` → 500, nothing downloaded, no message. Running the generator on every saved portfolio: only the ones with an override (portfolios 1 and 9) fail.
+2. **Test (written before any fix, failing):** [`f32_pdf_export_spec.rb`](../api/spec/requests/f32_pdf_export_spec.rb): an overridden portfolio, and evidence with `→` and `≥`, both get 500 instead of a PDF. The control (a plain portfolio) passes.
+
+> **In plain words:** the report prints fine until someone writes an arrow on it; then the printer jams and nobody is told.
+
+**Status: fixed.**
+- **Test first:** [`f32_pdf_export_spec.rb`](../api/spec/requests/f32_pdf_export_spec.rb) was pushed without a fix and CI went red ([36827823866](https://github.com/yond44/yonda-quality-net/actions/runs/36827823866)): 2/3 failed with 500. All 3 now pass, unchanged ([36827849551](https://github.com/yond44/yonda-quality-net/actions/runs/36827849551)).
+- **The fix:** the PDF uses a Unicode TrueType font (DejaVu Sans, free licence, kept in `api/vendor/fonts` with its licence) instead of PDF's built-in fonts ([`pdf_generator.rb`](../api/app/services/exports/pdf_generator.rb)). With a TrueType font, a character the font lacks is drawn as a blank box, never an error, so no AI text can crash the export again.
+- **Checked:** all 16 saved portfolios export, including the three with overrides; the text reads "Level: L4 (AI: L2 → Override: L4)". In the browser, PDF after an override downloads.
+
+**What remains (disclosed):** emoji and Chinese/Japanese characters print as blank boxes (the font has no glyphs for them), and Arabic isn't laid out right to left. The web's export buttons still show no message if an export fails for another reason (for example the network); that's the F21 pattern.
+
+---
+
+### F33 — Clicking a level on the second skill changes the first skill · P1 · LIVE + TEST
+
+*Present since the original import. Found in the end-to-end browser test (2026-10-01).*
+
+**Impact:** on any form with more than one skill (new or edit vacancy, new or edit assessment), clicking the **text** "L1"–"L5" of the second (or later) skill changes the level of the **first** skill. The skill that was clicked doesn't change. A vacancy can be saved with the wrong required levels, and every fit/gap result against it is then wrong. Clicking the small circle itself works, which is why it's easy to miss. Data integrity, so at least P1.
+
+**What goes wrong:**
+- Every level picker gives its options the same ids, `level-1` … `level-5`, and each label points at its id ([`LevelRadio.tsx:23-24`](../web/src/components/assessment/LevelRadio.tsx#L23-L24)).
+- In HTML, a label activates the **first** element on the page with that id. With two skills on the page there are two `level-2` ids, and the label of the second one activates the first.
+
+**Evidence:**
+1. **Live (browser):** a new vacancy with React (meant L3) and Communication (meant L2). Clicking "L2" on Communication moved React to L2. The vacancy was saved as React L2 / Communication L3.
+2. **Test (written before any fix, failing):** [`LevelRadio.test.tsx`](../web/src/components/assessment/LevelRadio.test.tsx): with two pickers, clicking the second one's "L2" calls the first one's handler; 10 options share 5 ids. The control (one picker) passes.
+
+> **In plain words:** two forms on a desk share the same box numbers, so ticking "box 2" on the second form ticks it on the first.
+
+**Status: fixed.**
+- **Test first:** [`LevelRadio.test.tsx`](../web/src/components/assessment/LevelRadio.test.tsx) was pushed without a fix and CI went red ([36827870194](https://github.com/yond44/yonda-quality-net/actions/runs/36827870194)): 2/3 failed. All 3 now pass, unchanged ([36827898429](https://github.com/yond44/yonda-quality-net/actions/runs/36827898429)).
+- **The fix:** each level picker makes its own id prefix with React's `useId()`, so every option on the page has a unique id and each label points at its own option ([`LevelRadio.tsx`](../web/src/components/assessment/LevelRadio.tsx)). One component, so every form that uses it (vacancy, assessment, override) is fixed at once.
+- **Checked in the browser:** clicking the "L2" text on the second skill of a new vacancy now saves React L3 / Communication L2, as chosen.
+- **Existing data:** vacancies saved before the fix may hold a wrong level. Nothing in the data shows which, so recruiters should re-check the required levels of their vacancies (in the release notes).
+
+---
+
+### F34 — The live monitor of a finished interview still says "Live" · P3 · LIVE
+
+*Found in the end-to-end browser test (2026-10-01).*
+
+Opening the monitor of an interview that has already ended shows the green **"Live"** badge (it means the monitor's own connection is open) and **no "Session ended" banner**, because the banner only appears when the end arrives live, not from the loaded status ([`LiveMonitorPage.tsx:166-172`](../web/src/pages/monitor/LiveMonitorPage.tsx#L166-L172)). The data is correct and the portfolio link works; only the wording misleads. P3.
+
+**Status: remaining.**
 ---
 
 ### F8 — "Required" column in the fit/gap table is always empty · P2 · LIVE
@@ -875,6 +966,7 @@ The first version of this file covered only part of the code. Here's where each 
 | — | **F28, M11** | Found in a manual review after v1.0.0: crashed interviews had "complete" portfolios with L1, and the AI's own "level 0" became L1 on a retry |
 | F7 | **F30** | The F7 fix failed with the real AI in live testing: it gave each skill a second id in the coverage data, and the AI sometimes copied that one |
 | F6 | **F6** | Re-reproduced in a normal live interview: the AI said goodbye early and the session was saved `all_covered` with its only skill `not_yet` |
+| — | **F31, F32, F33, F34** | Found in the end-to-end test (API checks plus a real browser and a real interview): ending an interview shows "Connection lost" (an F25 regression), the PDF export fails after an override, a level click changes the wrong skill, and the monitor of a finished interview says "Live" |
 | F17 bullet "company chosen from unchecked data" | **F23** (P1) | Found while fixing F2: exploiting it gave full read and write access to another company. Re-ranked from P2 to P1. |
 
 ---
@@ -883,5 +975,6 @@ The first version of this file covered only part of the code. Here's where each 
 
 - **Setup:** backend (Rails + Sidekiq), PostgreSQL 18 and Redis 8, all run natively on my machine, plus the website (Vite). The first pass used a dummy AI key and fake AI responses for the AI-dependent parts.
 - **Live interviews (2026-09-30):** with a real, free AI key, real voice interviews were run end to end. This found F25, F26 and the normal-flow path of F6. Two local limits: the WebSocket library had to be rebuilt with encryption support on Windows (a local build problem, not a product bug), and the **free key is rate-limited**, so the background AI calls (coverage updates, portfolios) can fail with "Rate limited" during live tests.
+- **End-to-end test (2026-10-01):** every API endpoint was called as the recruiter and the candidate would, for two companies (65 checks). Then a real Chrome was driven by a script (Playwright), visible on screen: the recruiter logged in, built an assessment and a vacancy through the forms, invited a candidate; the candidate passed the hardware check and held a real voice interview with the AI, with a fake microphone playing a recorded answer; then the recruiter used the portfolio, fit/gap, exports, override and transcript pages. This found F31–F34. Two notes from it: a background worker started before a fix keeps running the old code until it's restarted (an old worker reproduced F30 after it was fixed), and portfolios generated before F28 still show the invented L1 until they're regenerated.
 - **Test data:** two companies. Company A is the default one. Company B has one confidential candidate report: level L4 in "Negotiation", with a quote.
 - **How:** I called the running API directly with Company A's normal login. Two exceptions: F1, where I got a Company B login, and F6, which needs no login at all. For F5, I ran the portfolio generator from the command line with a fake AI response.

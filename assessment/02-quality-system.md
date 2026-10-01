@@ -56,8 +56,10 @@ One spec file per **class of risk**, not a coverage percentage:
 | [`f26_opening_watchdog_spec.rb`](../api/spec/clients/f26_opening_watchdog_spec.rb) | **F26** the AI never opens the interview and the candidate is stuck muted | If the AI hasn't answered the start message in time it is asked again, then the turn goes back to the candidate; nothing happens once the AI talks |
 | [`f27_hidden_notes_spec.rb`](../api/spec/services/f27_hidden_notes_spec.rb) | **F27** the AI reads its hidden notes aloud, and the record hides it | The notes are sent under the tag the AI's instructions name (read from the real instructions); a slip is marked in the recruiter's transcript |
 | [`f28_no_evidence_spec.rb`](../api/spec/services/f28_no_evidence_spec.rb), [`constants.test.ts`](../web/src/utils/constants.test.ts) and [`LevelBadge.test.tsx`](../web/src/components/portfolio/LevelBadge.test.tsx) | **F28** a skill with no evidence gets a level | No answers → "not assessed" without asking the AI; the AI's "not_assessed" is kept; fit/gap and the page show "not assessed", never L1 |
-| **F30** portfolios fail when the AI copies the coverage id *(found in live testing, after v1.0.1)* | [36815953972](https://github.com/yond44/yonda-quality-net/actions/runs/36815953972): 2/2 failing | [36816139679](https://github.com/yond44/yonda-quality-net/actions/runs/36816139679) (F30 no longer flagged) | One id per skill across the prompt: the coverage data uses the same `S12` reference as the skill list |
 | [`f30_one_skill_id_spec.rb`](../api/spec/services/f30_one_skill_id_spec.rb) | **F30** portfolios fail when the AI copies a different id | A fake AI that copies the coverage id (as the real one did) still gets a portfolio; each skill has one id across the prompt |
+| [`useAudioWebSocket.test.ts`](../web/src/hooks/useAudioWebSocket.test.ts) (F31 block) and [`InterviewEnd.test.tsx`](../web/src/pages/interview/InterviewEnd.test.tsx) | **F31** a candidate who ends the interview is told "Connection lost" | After End Interview, and after the time runs out, the page shows "Interview Complete"; a real drop still reconnects |
+| [`f32_pdf_export_spec.rb`](../api/spec/requests/f32_pdf_export_spec.rb) | **F32** the PDF export crashes on characters its font can't encode | A portfolio with an override, or with symbols such as `→` and `≥` in the evidence, exports as a PDF |
+| [`LevelRadio.test.tsx`](../web/src/components/assessment/LevelRadio.test.tsx) | **F33** a level click changes another skill | With two level pickers on a page, clicking the second one's "L2" changes only the second; every option has its own id |
 | [`critical_path_spec.rb`](../api/spec/requests/critical_path_spec.rb) | **Regression on the main journey** | Log in → assessment → invite → candidate opens it; interview → portfolio → fit/gap |
 
 **Two design choices keep the net honest:**
@@ -188,6 +190,10 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 | **F8** "Required" column always empty | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 3/3 failing | [#1](https://github.com/yond44/yonda-quality-net/pull/1) [36667125182](https://github.com/yond44/yonda-quality-net/actions/runs/36667125182) (all tests green) and `main` after the merge [36667342497](https://github.com/yond44/yonda-quality-net/actions/runs/36667342497) | The comparison also carries `required_level` and `is_override`; old reports get `required_level` filled in when read |
 | **F25 follow-up** a server error while opening the interview shown as "Interview Complete" | [#3](https://github.com/yond44/yonda-quality-net/pull/3) [36668038365](https://github.com/yond44/yonda-quality-net/actions/runs/36668038365): the new web and API checks failing | [#3](https://github.com/yond44/yonda-quality-net/pull/3) [36668170107](https://github.com/yond44/yonda-quality-net/actions/runs/36668170107) | The server reports an already-ended session as ended; any other failure shows "Something went wrong" |
 | **F28** a skill with no evidence gets a level *(found in manual review, after v1.0.0)* | [36812383367](https://github.com/yond44/yonda-quality-net/actions/runs/36812383367): API 4/5 + 3 web checks failing | [36812959237](https://github.com/yond44/yonda-quality-net/actions/runs/36812959237) (F28 no longer flagged) | No evidence means "not assessed" (no level): never-answered interviews skip the AI; the AI may answer `not_assessed`; fit/gap and the page say so |
+| **F30** portfolios fail when the AI copies the coverage id *(found in live testing, after v1.0.1)* | [36815953972](https://github.com/yond44/yonda-quality-net/actions/runs/36815953972): 2/2 failing | [36816139679](https://github.com/yond44/yonda-quality-net/actions/runs/36816139679) (F30 no longer flagged) | One id per skill across the prompt: the coverage data uses the same `S12` reference as the skill list |
+| **F31** a candidate who ends the interview is told "Connection lost" *(found in the end-to-end browser test; an F25 regression)* | [36827787574](https://github.com/yond44/yonda-quality-net/actions/runs/36827787574): 3 web checks failing (the F25 checks green) | [36827803414](https://github.com/yond44/yonda-quality-net/actions/runs/36827803414) (F31 no longer flagged) | The page marks a close it asked for; the close handler ignores it instead of reporting a lost connection |
+| **F32** the PDF export fails after an override *(found in the end-to-end test)* | [36827823866](https://github.com/yond44/yonda-quality-net/actions/runs/36827823866): API 2/3 failing with 500 | [36827849551](https://github.com/yond44/yonda-quality-net/actions/runs/36827849551) (F32 no longer flagged) | A Unicode TrueType font (DejaVu Sans) instead of PDF's built-in fonts |
+| **F33** a level click changes another skill *(found in the end-to-end browser test)* | [36827870194](https://github.com/yond44/yonda-quality-net/actions/runs/36827870194): 2 web checks failing | [36827898429](https://github.com/yond44/yonda-quality-net/actions/runs/36827898429) (all checks green) | Each level picker gets its own id prefix (`useId`) |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
 
@@ -713,6 +719,79 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - **A contract test,** so if either part of the prompt changes its ids again, CI goes red.
   - **Checked with the real AI,** because the fake AI is what let this through in the first place.
 - **Green:** [36816139679](https://github.com/yond44/yonda-quality-net/actions/runs/36816139679) (F30 no longer flagged).
+
+### F31: a candidate who ended the interview was told "Connection lost" (P1, found in the end-to-end browser test; a regression from the F25 fix)
+
+- **Red:** [36827787574](https://github.com/yond44/yonda-quality-net/actions/runs/36827787574), 3 web checks failing (the F25 checks green). Two levels: the hook ([`useAudioWebSocket.test.ts`](../web/src/hooks/useAudioWebSocket.test.ts), F31 block) and the page, with the real page code and stand-ins only for microphone, speakers and timer ([`InterviewEnd.test.tsx`](../web/src/pages/interview/InterviewEnd.test.tsx)).
+- **Root cause:** `disconnect()` stopped reconnects by setting the attempt counter to its maximum. When the browser then reported the close, the close handler saw "no attempts left" and, since the F25 fix, reported `connection_lost`. Before F25 the same branch said "complete", which hid the problem. A close the page asked for and a reconnect that failed looked the same.
+- **Files changed:**
+  - [`useAudioWebSocket.ts:30-32`](../web/src/hooks/useAudioWebSocket.ts#L30-L32): a `closedOnPurposeRef` flag
+  - [`useAudioWebSocket.ts:41`](../web/src/hooks/useAudioWebSocket.ts#L41): cleared on every new connection
+  - [`useAudioWebSocket.ts:128`](../web/src/hooks/useAudioWebSocket.ts#L128): the close handler ignores a close the page asked for
+  - [`useAudioWebSocket.ts:157`](../web/src/hooks/useAudioWebSocket.ts#L157) and [`:164`](../web/src/hooks/useAudioWebSocket.ts#L164): `disconnect()` and leaving the page set the flag
+- **Before -> after:**
+  ```ts
+  // disconnect()
+  // BEFORE: "no reconnect" was faked by using up the attempts
+  reconnectAttemptsRef.current = RECONNECT_DELAYS.length;
+  // AFTER: say what happened
+  closedOnPurposeRef.current = true;
+
+  // ws.onclose
+  // BEFORE: (no check) -> attempts used up -> onStateChange("connection_lost")
+  // AFTER:
+  if (closedOnPurposeRef.current) return; // the page closed it: nothing was lost
+  ```
+- **Why this way:**
+  - **Name the intent instead of overloading a counter.** The counter means "how many reconnects were tried"; reusing it to mean "don't reconnect" is what let two different events look the same.
+  - **Fixed in the hook,** so every way the page closes the connection (End Interview, the time limit, leaving the page) is covered by one change.
+  - **Lesson:** the F25 tests covered a drop and a server end, but not the page's own close. The end-to-end test is what found it.
+- **Green:** [36827803414](https://github.com/yond44/yonda-quality-net/actions/runs/36827803414); in the browser, End Interview shows "Interview Complete".
+
+### F32: the PDF export crashed for every overridden portfolio (P1, found in the end-to-end test)
+
+- **Red:** [36827823866](https://github.com/yond44/yonda-quality-net/actions/runs/36827823866) ([`f32_pdf_export_spec.rb`](../api/spec/requests/f32_pdf_export_spec.rb)), 2/3 failing with 500.
+- **Root cause:** the PDF used PDF's built-in fonts, which only encode Windows-1252. The override line prints `→`, which isn't in that set, so the PDF library raised an error. Any AI text with such a character did the same.
+- **Files changed:**
+  - [`pdf_generator.rb:19-29`](../api/app/services/exports/pdf_generator.rb#L19-L29): the font family (DejaVu Sans, normal and bold)
+  - [`pdf_generator.rb:41-42`](../api/app/services/exports/pdf_generator.rb#L41-L42): the document uses it
+  - `api/vendor/fonts/`: `DejaVuSans.ttf`, `DejaVuSans-Bold.ttf` and the font's `LICENSE`
+- **Before -> after:**
+  ```ruby
+  # BEFORE: PDF's built-in Helvetica (Windows-1252 only) -> "→" raises IncompatibleStringEncoding
+  Prawn::Document.new(page_size: 'A4', ...) do |pdf|
+  # AFTER: a Unicode TrueType font
+  Prawn::Document.new(page_size: 'A4', ...) do |pdf|
+    pdf.font_families.update(FONT_FAMILY)
+    pdf.font('DejaVuSans')
+  ```
+  In JavaScript terms: like switching a `latin1` encoder that throws on `→` to a UTF-8 one.
+- **Why this way:**
+  - **A Unicode font, not replacing the arrow.** Replacing `→` with `->` would fix the one character we know about. The AI writes free text, so the next symbol would crash it again. With a TrueType font, a missing glyph is drawn as a box and never raises.
+  - **The font is kept in the repo** (with its licence), so the export works the same on every machine and in CI, without depending on system fonts.
+- **Checked:** every saved portfolio exports (16/16, including three with overrides), and the extracted PDF text reads "Level: L4 (AI: L2 → Override: L4)".
+- **Green:** [36827849551](https://github.com/yond44/yonda-quality-net/actions/runs/36827849551).
+
+### F33: clicking a level on the second skill changed the first skill (P1, found in the end-to-end browser test)
+
+- **Red:** [36827870194](https://github.com/yond44/yonda-quality-net/actions/runs/36827870194) ([`LevelRadio.test.tsx`](../web/src/components/assessment/LevelRadio.test.tsx)), 2/3 failing.
+- **Root cause:** every level picker used the ids `level-1` … `level-5`. A label activates the **first** element on the page with its id, so with two pickers on a form, the second one's labels changed the first one.
+- **Files changed:** [`LevelRadio.tsx:1`](../web/src/components/assessment/LevelRadio.tsx#L1), [`:17`](../web/src/components/assessment/LevelRadio.tsx#L17) and [`:28-29`](../web/src/components/assessment/LevelRadio.tsx#L28-L29)
+- **Before -> after:**
+  ```tsx
+  // BEFORE: the same id in every picker
+  <RadioGroupItem value={String(level)} id={`level-${level}`} />
+  <Label htmlFor={`level-${level}`}>
+  // AFTER: a prefix unique to this picker
+  const idPrefix = useId();
+  <RadioGroupItem value={String(level)} id={`${idPrefix}-level-${level}`} />
+  <Label htmlFor={`${idPrefix}-level-${level}`}>
+  ```
+- **Why this way:**
+  - **`useId()`** is React's built-in way to make ids unique per component instance (and stable between renders), so no caller has to pass an id.
+  - **One component fixed,** so every form that uses it is fixed: vacancy (new and edit), assessment skills, and the override panel.
+  - **The test checks both** the behaviour (the right handler is called) and the cause (no duplicate ids), so a future change that brings back shared ids fails CI.
+- **Green:** [36827898429](https://github.com/yond44/yonda-quality-net/actions/runs/36827898429); in the browser, the vacancy is saved with the levels chosen.
 
 ## Assumptions
 
