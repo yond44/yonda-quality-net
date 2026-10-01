@@ -1,5 +1,19 @@
 # Release notes
 
+## v1.0.1
+
+*Fixes a P1 found in a manual review after v1.0.0 was tagged. Use this version instead of v1.0.0.*
+
+### What this version delivers
+
+- **F28: a skill with no evidence is "Not assessed", never given a level.** An interview where the candidate never answered (for example, one that crashed before anyone spoke) no longer gets an invented L1. The AI can say a skill wasn't assessed, fit/gap shows "not assessed" instead of a gap, and the website and PDF say "Not assessed". A recruiter can still set a level by hand.
+- Everything in v1.0.0.
+
+### Before deploying (required)
+
+- Everything listed for v1.0.0 below, plus **run the new migration**, which allows a skill to have no level. It can be rolled back only while no skill is "not assessed".
+- **Regenerate portfolios from interviews without candidate answers.** Ones generated before this version may show an invented level.
+
 ## v1.0.0
 
 *The first release built and checked with the quality net.* It fixes every P0 and P1 finding in the audit ([`assessment/01-audit.md`](assessment/01-audit.md)). Each fix is covered by a check that failed before it and passes now. The release decision, with the accepted risks, is in [`assessment/03-release-decision.md`](assessment/03-release-decision.md).

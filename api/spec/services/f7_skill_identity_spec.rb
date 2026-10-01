@@ -12,8 +12,7 @@ require 'rails_helper'
 RSpec.describe 'F7: portfolio skills stay tied to the configured skills, whatever the AI calls them', type: :service do
   let(:org) { create_org('acme') }
   let(:session) do
-    create_interview_session(create_assessment(org, skills: ['Negotiation Skills', 'Communication']),
-                             status: 'ended', end_reason: 'all_covered')
+    create_answered_interview(create_assessment(org, skills: ['Negotiation Skills', 'Communication']))
   end
   let(:paraphrase) { ->(label) { label.sub(' Skills', '') } } # "Negotiation Skills" -> "Negotiation"
 

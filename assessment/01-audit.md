@@ -6,7 +6,7 @@
 1. I read the code and compared it to the specs.
 2. I ran the whole app on my machine and **reproduced the main problems for real**. Each finding below says how to reproduce it.
 
-**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25, F6, F7, F26, F27 and F8 are `fixed`. Everything else is `remaining`: a conscious call for this release, with owners in [`03-release-decision.md`](03-release-decision.md).
+**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25, F6, F7, F26, F27, F8 and F28 are `fixed`. Everything else is `remaining`: a conscious call for this release, with owners in [`03-release-decision.md`](03-release-decision.md).
 
 ---
 
@@ -92,7 +92,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F24 | The pre-interview internet check blocks candidates whose connection is good enough (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F25 | A dropped connection tells the candidate "Interview Complete", and the interview stays "Live" forever (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
 | F26 | The AI sometimes never opens the interview; the candidate is stuck in silence with a muted mic (found in manual testing) | **P1** | built-wrong | LIVE | **fixed** |
-| F28 | A skill with no evidence still gets a level (L1), so the hiring record shows a grade nobody earned (found in manual review, after v1.0.0) | **P1** | built-wrong | LIVE + TEST | remaining |
+| F28 | A skill with no evidence still gets a level (L1), so the hiring record shows a grade nobody earned (found in manual review, after v1.0.0) | **P1** | built-wrong | LIVE + TEST | **fixed** |
 | F27 | The AI can read its hidden notes aloud, and the transcript hides it from the recruiter (found in manual testing) | P2 | built-wrong | LIVE + TEST | **fixed** |
 | F8 | "Required" column in the fit/gap table is always empty | P2 | built-wrong | LIVE | **fixed** |
 | F9 | Delete says "deleted" but nothing is deleted | P2 | built-wrong | LIVE | remaining |
@@ -564,9 +564,22 @@ Connections drop in normal use: a candidate's Wi-Fi, a server restart during a d
 
 > **In plain words:** a teacher grading A–E gets a blank exam paper. "F" isn't allowed, so the paper goes back, and the second time the teacher writes "E". The record now says the student earned an E on a test they never answered.
 
-**Tests written before the fix** (they fail on the current code; each file has a passing control):
-- [`f28_no_evidence_spec.rb`](../api/spec/services/f28_no_evidence_spec.rb): a never-answered interview is "not assessed", without asking the AI; the AI's own "not_assessed" is kept; fit/gap shows `not_assessed`, not a gap; a recruiter can still set a level by hand.
-- [`constants.test.ts`](../web/src/utils/constants.test.ts) and [`LevelBadge.test.tsx`](../web/src/components/portfolio/LevelBadge.test.tsx): a missing or unreadable level is never shown as L1, and the badge says "Not assessed".
+**Status: fixed.**
+- **Tests first:** pushed without a fix, and CI went red by itself ([run 36812383367](https://github.com/yond44/yonda-quality-net/actions/runs/36812383367): "F28 failing (4 of 5)" plus the 3 web checks). Each file has a control that passes throughout:
+  - [`f28_no_evidence_spec.rb`](../api/spec/services/f28_no_evidence_spec.rb): a never-answered interview is "not assessed", without asking the AI; the AI's own `"not_assessed"` is kept; fit/gap shows `not_assessed`, not a gap; a recruiter can still set a level by hand.
+  - [`constants.test.ts`](../web/src/utils/constants.test.ts) and [`LevelBadge.test.tsx`](../web/src/components/portfolio/LevelBadge.test.tsx): a missing or unreadable level is never shown as L1, and the badge says "Not assessed".
+- **The fix, across the stack:**
+  - **Database:** a skill's level can now be empty, which means "not assessed" ([migration](../api/db/migrate/20261001000000_allow_not_assessed_skills.rb)). The 1–5 checks stay.
+  - **Generator** ([`generator.rb`](../api/app/services/portfolios/generator.rb)): if the candidate never answered, every skill is "not assessed" and **the AI isn't asked**. Otherwise the AI is told to answer `"not_assessed"` when there's no evidence, and never to guess. That answer is stored with no level. A missing or garbled level still fails loudly (F5). A successful generation also clears any old error text.
+  - **Fit/gap** ([`engine.rb`](../api/app/services/fit_gap/engine.rb)) shows such a skill as `not_assessed`, never as a gap. **Overrides** still work: a recruiter can give it a level by hand.
+  - **Web:** `parseLevel` no longer turns anything unreadable into 1; the level badge says **"Not assessed"**; confidence is hidden when there's no level; the override panel starts with no level chosen.
+  - **PDF export:** prints "Not assessed" instead of a blank level.
+- **Three older tests had to change their setup, not their checks.** The F5, F7 and critical-path tests used "finished" interviews where the candidate never said anything, which is exactly the case F28 now treats as "not assessed". Their setup now includes a candidate answer (`create_answered_interview`); none of their assertions changed.
+
+**What remains after the fix (disclosed, not hidden):**
+- **"Below L1" isn't its own outcome.** A candidate who shows they don't understand a skill at all is recorded as "not assessed", with the AI's reason in the summary. Whether that deserves its own outcome is a product decision (M11).
+- **The answer format is still only requested in the prompt, not enforced.** Gemini can enforce a response schema (level: 1–5 or `"not_assessed"`). That's a follow-up, because the free key's rate limit made it impossible to verify against the real model.
+- **Portfolios generated before this fix keep their invented levels** until they're regenerated (locally: sessions 4, 5 and 7).
 
 ---
 

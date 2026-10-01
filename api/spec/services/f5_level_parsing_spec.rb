@@ -7,8 +7,7 @@ require 'rails_helper'
 # was marked complete. A level must be read correctly or generation must fail loudly.
 RSpec.describe 'F5: an AI level the code cannot read is never stored as L1', type: :service do
   let(:session) do
-    create_interview_session(create_assessment(create_org('acme'), skills: ['Negotiation']),
-                             status: 'ended', end_reason: 'all_covered')
+    create_answered_interview(create_assessment(create_org('acme'), skills: ['Negotiation']))
   end
 
   def generate(level)
@@ -37,8 +36,7 @@ RSpec.describe 'F5: an AI level the code cannot read is never stored as L1', typ
   end
 
   it 'keeps the previous skills when a regeneration fails, instead of leaving a half-saved portfolio' do
-    two_skills = create_interview_session(create_assessment(create_org('beta'), skills: %w[Negotiation Communication]),
-                                          status: 'ended', end_reason: 'all_covered')
+    two_skills = create_answered_interview(create_assessment(create_org('beta'), skills: %w[Negotiation Communication]))
     first_run = FakePortfolioModel.new(levels: { 'Negotiation' => 4, 'Communication' => 3 })
     Portfolios::Generator.new(session: two_skills, gemini_client: first_run).call
 

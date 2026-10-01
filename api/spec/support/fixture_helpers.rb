@@ -21,6 +21,15 @@ module FixtureHelpers
     Session.create!(tenant_id: assessment.tenant_id, assessment:, status:, **attrs)
   end
 
+  # A finished interview in which the candidate actually answered. Since audit F28, an
+  # interview with no candidate answers is "not assessed" instead of being graded.
+  def create_answered_interview(assessment, **attrs)
+    create_interview_session(assessment, status: 'ended', end_reason: 'all_covered', **attrs).tap do |session|
+      session.transcript_turns.create!(turn_number: 1, speaker: 'ai', text: 'Tell me about your recent work.')
+      session.transcript_turns.create!(turn_number: 2, speaker: 'candidate', text: 'I led a project end to end last quarter.')
+    end
+  end
+
   def create_portfolio(session, levels: { 'Negotiation' => 4 })
     portfolio = Portfolio.create!(session:, generation_status: 'complete', generated_at: Time.current)
     levels.each do |label, level|

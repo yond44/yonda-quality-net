@@ -33,7 +33,7 @@ RSpec.describe 'Critical path: assessor sets up an interview, results come back 
 
   it 'turns a finished interview into a portfolio and compares it to a vacancy' do
     assessment = create_assessment(org, skills: %w[Negotiation Communication])
-    session = create_interview_session(assessment, status: 'ended', end_reason: 'all_covered')
+    session = create_answered_interview(assessment)
 
     model = FakePortfolioModel.new(levels: { 'Negotiation' => 4, 'Communication' => 2 })
     portfolio = Portfolios::Generator.new(session:, gemini_client: model).call

@@ -27,11 +27,14 @@ module Portfolios
 
       portfolio.update!(generation_status: 'generating')
 
-      prompt   = build_prompt
-      response = @gemini_client.generate_content(prompt, temperature: 0.2)
-
-      save_skills(portfolio, response)
-      portfolio.update!(generation_status: 'complete', generated_at: Time.current)
+      if candidate_answered?
+        response = @gemini_client.generate_content(build_prompt, temperature: 0.2)
+        save_skills(portfolio, response)
+      else
+        # Nothing to grade: don't ask the AI to invent levels (audit F28).
+        replace_skills(portfolio, not_assessed_rows('the candidate gave no answers in this interview.'))
+      end
+      portfolio.update!(generation_status: 'complete', generated_at: Time.current, generation_error: nil)
 
       Rails.logger.info("[N10] Portfolio generated for session #{@session.id}")
       portfolio
@@ -94,6 +97,9 @@ module Portfolios
            Compare the candidate's actual behavior to the L1-L5 anchors.
            Assign the highest level where you see CONSISTENT evidence, not just one strong moment.
            If evidence is mixed (mostly L2 with one L3 moment), assign L2.
+           If the transcript gives no real evidence for a skill (it wasn't discussed, or the
+           candidate couldn't say anything about it), set "level" to "not_assessed" and say
+           why in competency_summary. Never guess a level without evidence.
 
         3. WRITE THE COMPETENCY SUMMARY
            2-3 sentences. Focus on patterns, not individual answers.
@@ -163,9 +169,25 @@ module Portfolios
       rows = configured_rows(data['configured_skills'] || []) +
              (data['discovered_skills'] || []).map { |skill_data| skill_row(skill_data, discovered: true) }
 
+      replace_skills(portfolio, rows)
+    end
+
+    def replace_skills(portfolio, rows)
       PortfolioSkill.transaction do
         portfolio.portfolio_skills.destroy_all # idempotent regeneration
         rows.each { |row| portfolio.portfolio_skills.create!(row) }
+      end
+    end
+
+    def candidate_answered?
+      @session.transcript_turns.where(speaker: 'candidate').exists?
+    end
+
+    # Every configured skill, with no level: nothing in the interview to grade it on (audit F28).
+    def not_assessed_rows(reason)
+      @session.assessment.assessment_skills.order(:display_order).map do |skill|
+        { skill_id: skill.skill_id, skill_label: skill.skill_label, is_discovered: false,
+          ai_level: nil, ai_confidence: nil, evidence: [], competency_summary: "Not assessed: #{reason}" }
       end
     end
 
@@ -197,22 +219,29 @@ module Portfolios
     end
 
     def skill_row(skill_data, discovered:, configured_skill: nil)
+      level = parse_level(skill_data)
       {
         skill_id:           configured_skill&.skill_id,
         skill_label:        configured_skill&.skill_label || skill_data['skill_label'],
         is_discovered:      discovered,
-        ai_level:           parse_level(skill_data),
-        ai_confidence:      skill_data['confidence'],
+        ai_level:           level,
+        ai_confidence:      level && skill_data['confidence'],
         evidence:           Array(skill_data['evidence']).first(3),
-        competency_summary: skill_data['competency_summary']
+        competency_summary: skill_data['competency_summary'].presence ||
+                            (level ? nil : 'Not assessed: there was no evidence for this skill in the interview.')
       }
     end
 
     # The AI's level as an integer 1-5. Accepts 3, 3.0, "3" and "L3". Anything else
     # (missing, 0, 7, 3.5, "high") raises, so generation fails loudly instead of the
     # old `to_i.clamp(1, 5)`, which turned "L3" and nil into L1 (audit F5).
+    #
+    # "not_assessed" is the one non-number answer allowed: no evidence for the skill.
+    # It returns nil, which is stored as "not assessed", never as a level (audit F28).
     def parse_level(skill_data)
       raw = skill_data['level']
+      return nil if raw.is_a?(String) && raw.strip.downcase.tr(' ', '_') == 'not_assessed'
+
       level = case raw
               when Integer then raw
               when Float   then raw.to_i if raw == raw.floor

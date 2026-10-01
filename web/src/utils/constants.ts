@@ -1,10 +1,14 @@
 export const TIME_LIMIT_OPTIONS = [10, 30, 45, 60, 90] as const;
 
-/** Parse "L3" → 3, passthrough number, fallback to 1 */
-export function parseLevel(level: string | number): number {
-  if (typeof level === "number") return level;
-  const n = parseInt(level.replace(/\D/g, ""), 10);
-  return isNaN(n) ? 1 : n;
+/**
+ * Parse a level: 3 → 3, "L3" → 3. A missing or unreadable level returns null, which
+ * means "not assessed". It used to fall back to 1, inventing a grade (audit F28).
+ */
+export function parseLevel(level: string | number | null | undefined): number | null {
+  if (typeof level === "number") return level >= 1 && level <= 5 ? level : null;
+  if (typeof level !== "string") return null;
+  const match = level.match(/^\s*L?\s*([1-5])\s*$/i);
+  return match ? Number(match[1]) : null;
 }
 
 export const LEVEL_LABELS: Record<number, string> = {

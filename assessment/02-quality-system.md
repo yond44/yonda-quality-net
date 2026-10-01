@@ -185,6 +185,7 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 | **F27** the AI reads its hidden notes aloud, and the record hides it *(found in manual testing)* | [36666018100](https://github.com/yond44/yonda-quality-net/actions/runs/36666018100): 2/3 failing | [36666047243](https://github.com/yond44/yonda-quality-net/actions/runs/36666047243) (F27 no longer flagged) | Notes are sent under the tag the AI is told to keep silent; a slip is marked in the recruiter's transcript |
 | **F8** "Required" column always empty | [36550036611](https://github.com/yond44/yonda-quality-net/actions/runs/36550036611): 3/3 failing | [#1](https://github.com/yond44/yonda-quality-net/pull/1) [36667125182](https://github.com/yond44/yonda-quality-net/actions/runs/36667125182) (all tests green) and `main` after the merge [36667342497](https://github.com/yond44/yonda-quality-net/actions/runs/36667342497) | The comparison also carries `required_level` and `is_override`; old reports get `required_level` filled in when read |
 | **F25 follow-up** a server error while opening the interview shown as "Interview Complete" | [#3](https://github.com/yond44/yonda-quality-net/pull/3) [36668038365](https://github.com/yond44/yonda-quality-net/actions/runs/36668038365): the new web and API checks failing | [#3](https://github.com/yond44/yonda-quality-net/pull/3) [36668170107](https://github.com/yond44/yonda-quality-net/actions/runs/36668170107) | The server reports an already-ended session as ended; any other failure shows "Something went wrong" |
+| **F28** a skill with no evidence gets a level *(found in manual review, after v1.0.0)* | [36812383367](https://github.com/yond44/yonda-quality-net/actions/runs/36812383367): API 4/5 + 3 web checks failing | the `fix(F28)` commit's run | No evidence means "not assessed" (no level): never-answered interviews skip the AI; the AI may answer `not_assessed`; fit/gap and the page say so |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
 
@@ -644,6 +645,49 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - **The test's source of truth is the web's own type file,** so the next time one side renames a field, CI goes red before a user sees an empty column.
 - **Delivered in pull request [#1](https://github.com/yond44/yonda-quality-net/pull/1).** Its description was left as the empty template by mistake, so the gate failed it, correctly (see "The gate in action").
 - **Green:** [36667125182](https://github.com/yond44/yonda-quality-net/actions/runs/36667125182) (PR #1, all tests green) and [36667342497](https://github.com/yond44/yonda-quality-net/actions/runs/36667342497) (`main` after the merge).
+
+### F28: a skill with no evidence still got a level (P1, found in manual review after v1.0.0)
+
+- **Red:** [36812383367](https://github.com/yond44/yonda-quality-net/actions/runs/36812383367): "F28 failing (4 of 5)" on the API, and the 3 new web checks.
+- **Root cause:** the system had **no way to say "not enough evidence"**. Every skill had to have a level 1–5 (in the database, the model and the web), and the generator asked the AI to grade every skill, even when the candidate never spoke. So an empty interview got L1. And when the AI tried to say "below the scale" (level 0), the F5 check refused it, and a retry produced L1.
+- **Files changed:**
+  - **Added:** [`20261001000000_allow_not_assessed_skills.rb`](../api/db/migrate/20261001000000_allow_not_assessed_skills.rb) (a level may be empty), with [`schema.rb`](../api/db/schema.rb) regenerated
+  - [`portfolio_skill.rb:10-15`](../api/app/models/portfolio_skill.rb#L10-L15) and [`assessor_override.rb:6-7`](../api/app/models/assessor_override.rb#L6-L7): an empty level is allowed and means "not assessed"
+  - [`generator.rb:30-37`](../api/app/services/portfolios/generator.rb#L30-L37): no candidate answers → no AI call
+  - [`generator.rb:100-102`](../api/app/services/portfolios/generator.rb#L100-L102): the prompt allows `"not_assessed"` and forbids guessing
+  - [`generator.rb:175-192`](../api/app/services/portfolios/generator.rb#L175-L192), [`:222-231`](../api/app/services/portfolios/generator.rb#L222-L231) and [`:239-243`](../api/app/services/portfolios/generator.rb#L239-L243): storing "not assessed"
+  - [`engine.rb:46-48`](../api/app/services/fit_gap/engine.rb#L46-L48): fit/gap shows `not_assessed`, not a gap
+  - [`pdf_generator.rb:84-87`](../api/app/services/exports/pdf_generator.rb#L84-L87): the PDF says "Not assessed"
+  - Web: [`constants.ts:3-12`](../web/src/utils/constants.ts#L3-L12) (`parseLevel`), [`LevelBadge.tsx:11-24`](../web/src/components/portfolio/LevelBadge.tsx#L11-L24), [`SkillPortfolioCard.tsx`](../web/src/components/portfolio/SkillPortfolioCard.tsx), [`OverridePanel.tsx`](../web/src/components/portfolio/OverridePanel.tsx), [`LevelRadio.tsx`](../web/src/components/assessment/LevelRadio.tsx), [`FitGapReportPage.tsx`](../web/src/pages/fitgap/FitGapReportPage.tsx) and [`types/index.ts`](../web/src/types/index.ts)
+  - Test setup only: [`fixture_helpers.rb:26`](../api/spec/support/fixture_helpers.rb#L26) (`create_answered_interview`), used by the F5, F7 and critical-path tests, whose assertions are unchanged
+- **Before → after:**
+  ```ruby
+  # generator.rb — BEFORE: always ask the AI to grade every skill
+  response = @gemini_client.generate_content(prompt, temperature: 0.2)
+  # AFTER: no answers from the candidate → nothing to grade, no AI call
+  if candidate_answered?
+    response = @gemini_client.generate_content(build_prompt, temperature: 0.2)
+    save_skills(portfolio, response)
+  else
+    replace_skills(portfolio, not_assessed_rows('the candidate gave no answers in this interview.'))
+  end
+
+  # parse_level — NEW: the AI's "not_assessed" is stored as no level (nil), never as L1
+  return nil if raw.is_a?(String) && raw.strip.downcase.tr(' ', '_') == 'not_assessed'
+  ```
+  ```ts
+  // constants.ts — BEFORE: unreadable → 1 (the F5 bug, on the web)
+  return isNaN(n) ? 1 : n;
+  // AFTER: unreadable or missing → null ("not assessed")
+  const match = level.match(/^\s*L?\s*([1-5])\s*$/i);
+  return match ? Number(match[1]) : null;
+  ```
+- **Why this way:**
+  - **"Not assessed" instead of L1.** L1 is a real finding ("understands the concept but can't apply it"); "never tested" is the absence of a finding. Using L1 would reject candidates when our system failed, or pass them for junior roles on a skill nobody tested. It would also bring back the F5 bug on purpose.
+  - **Don't ask the AI when the candidate never answered.** There's nothing to grade, and asking invites an invented level.
+  - **Give the AI an honest option** (`"not_assessed"`) instead of forcing a 1–5 number. The live run showed it was already trying to say exactly that (level 0).
+  - **Recruiters stay in control:** a not-assessed skill can still be given a level by hand.
+- **Green:** the `fix(F28)` commit's run.
 
 ## Assumptions
 
