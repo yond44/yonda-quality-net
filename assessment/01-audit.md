@@ -6,7 +6,7 @@
 1. I read the code and compared it to the specs.
 2. I ran the whole app on my machine and **reproduced the main problems for real**. Each finding below says how to reproduce it.
 
-**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25, F6, F7, F26, F27, F8, F28, F30, F31, F32 and F33 are `fixed`. Everything else is `remaining`: a conscious call for this release, with owners in [`03-release-decision.md`](03-release-decision.md).
+**Status:** F22, F1, F2, F23, F3, F24, F4, F5, F25, F6, F7, F26, F27, F8, F28, F30, F31, F32, F33 and F35 are `fixed`. Everything else is `remaining`: a conscious call for this release, with owners in [`03-release-decision.md`](03-release-decision.md).
 
 ---
 
@@ -97,6 +97,7 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F31 | A candidate who ends the interview (End Interview, or the time limit) is told "Connection lost, your interview has not ended" (found in the end-to-end browser test; a regression from the F25 fix) | **P1** | built-wrong | LIVE + TEST | **fixed** |
 | F32 | The PDF export fails (500) for every portfolio a recruiter has overridden, and the PDF button does nothing (found in the end-to-end test) | **P1** | built-wrong | LIVE + TEST | **fixed** |
 | F33 | Clicking a level's label on the second skill of a form changes the **first** skill's level, so a vacancy can be saved with the wrong required levels (found in the end-to-end browser test) | **P1** | built-wrong | LIVE + TEST | **fixed** |
+| F35 | The Assessments and Vacancies lists only ever show the newest 20; older assessments (with their candidates and results) and older vacancies can only be reached by typing a URL, and can't be used for fit/gap (found in the soak test) | **P1** | built-wrong | LIVE + TEST | **fixed** |
 | F27 | The AI can read its hidden notes aloud, and the transcript hides it from the recruiter (found in manual testing) | P2 | built-wrong | LIVE + TEST | **fixed** |
 | F8 | "Required" column in the fit/gap table is always empty | P2 | built-wrong | LIVE | **fixed** |
 | F9 | Delete says "deleted" but nothing is deleted | P2 | built-wrong | LIVE | remaining |
@@ -112,7 +113,10 @@ On top of that, **there are no automated tests and no CI** (M1). Nothing would h
 | F19 | A leftover sign-up page lets users choose to be "admin" | P3 | built-wrong | CODE | remaining |
 | F20 | Small UI issues | P3 | built-wrong | CODE | remaining |
 | F34 | The live monitor of a finished interview still says "Live" and shows no "Session ended" banner (found in the end-to-end browser test) | P3 | built-wrong | LIVE | remaining |
+| F37 | The header badge always shows the same company name ("Tenant: …"), whoever is logged in (found in the soak test) | P3 | built-wrong | LIVE + CODE | remaining |
+| F38 | A login blocked by the rate limit says "Invalid email or password." even when the password is right (found in the soak test) | P3 | built-wrong | LIVE | remaining |
 | F21 | Four pages silently swallow load errors, so a missing or forbidden record shows as an empty form (source ticket #2, closed "not planned", still present) | P2 | built-wrong | LIVE (API) + CODE | remaining |
+| F36 | When the AI service fails in the middle of an interview, the server reconnects forever and the candidate is never told (found in the soak test, during a Gemini outage) | P2 | built-wrong | LIVE + CODE | remaining |
 
 ---
 
@@ -704,6 +708,61 @@ Connections drop in normal use: a candidate's Wi-Fi, a server restart during a d
 Opening the monitor of an interview that has already ended shows the green **"Live"** badge (it means the monitor's own connection is open) and **no "Session ended" banner**, because the banner only appears when the end arrives live, not from the loaded status ([`LiveMonitorPage.tsx:166-172`](../web/src/pages/monitor/LiveMonitorPage.tsx#L166-L172)). The data is correct and the portfolio link works; only the wording misleads. P3.
 
 **Status: remaining.**
+
+---
+
+### F35 — The lists only show the newest 20 assessments and vacancies · P1 · LIVE + TEST
+
+*Present since the original import. Found in the soak test (2026-10-02): after 20 runs created new records, the second company's own oldest assessment vanished from its list.*
+
+**Impact:** once a company has more than 20 assessments or vacancies, **the older ones disappear from the app**. Their candidates, portfolios and fit/gap reports can only be reached by typing a URL, and an older vacancy **can't be chosen for fit/gap at all**. Every company passes 20 quickly. With the test data, the admin's 30 assessments hid 10, including real finished interviews, and 25 vacancies hid 5. The objective is reachable only with a manual workaround, so P1.
+
+**What goes wrong:**
+- The API returns lists 20 at a time, with the page count in `meta.total_pages`.
+- The Assessments and Vacancies pages only ever ask for page 1 and have no way to ask for more.
+- The fit/gap vacancy choice on the portfolio page uses the same first page.
+
+**Evidence:**
+1. **Live:** `GET /assessments` for the admin: `{"total_count":30,"total_pages":2,"per_page":20}`, and the page shows 20 with no page controls. Same for vacancies (25).
+2. **Tests (written before the fix, failing in CI [36970071541](https://github.com/yond44/yonda-quality-net/actions/runs/36970071541)):** [`AssessmentListPage.test.tsx`](../web/src/pages/assessments/AssessmentListPage.test.tsx), [`VacancyListPage.test.tsx`](../web/src/pages/vacancies/VacancyListPage.test.tsx), [`PortfolioPage.test.tsx`](../web/src/pages/portfolio/PortfolioPage.test.tsx): the 21st assessment and vacancy can't be reached, and an older vacancy isn't offered for fit/gap. The HTTP layer is faked, so the checks don't depend on how the fix fetches the pages.
+
+> **In plain words:** the filing cabinet only lets you open the top drawer. The older files are still there, but only if you know their exact number.
+
+**Status: fixed.**
+- **The fix:** a small page control (Previous / Page X of Y / Next) on both lists, shown only when there's more than one page; the fit/gap choice loads every vacancy, page by page (100 at a time, the API's maximum). Green: [36970269123](https://github.com/yond44/yonda-quality-net/actions/runs/36970269123).
+- **Checked in the browser with the real data:** "Page 1 of 2", page 2 opens the old "Backend Engineer" assessment, the oldest vacancy is listed, and fit/gap runs against it (25 vacancies offered).
+
+---
+
+### F36 — An AI failure in the middle of an interview is never shown to the candidate · P2 · LIVE + CODE
+
+*Found in the soak test (2026-10-02), during a Gemini Live outage.*
+
+**Impact:** if the AI service accepts the connection but fails once audio arrives (Gemini answered `1011 Internal error encountered`), the server reconnects, the AI fails again, and so on **for as long as the candidate stays**. The candidate hears nothing and is never told. The fallback built for this case ("The session encountered a problem. Please contact the interviewer.") is never reached.
+
+**What goes wrong:** the server gives up after 3 failed reconnects ([`audio_websocket_middleware.rb:426-434`](../api/app/channels/audio_websocket_middleware.rb#L426-L434)), but every **successful** reconnect resets the count to 0 ([`:365`](../api/app/channels/audio_websocket_middleware.rb#L365)). A connection that opens and then dies never counts as a failure.
+
+**Evidence:** live, session 24: 12 × `Gemini closed unexpectedly (code=1011) — retry 1/3`, the conversation never resumed. The same failure reproduced outside the app (3/3), so the outage was Google's; the app's handling of it is the finding.
+
+**Why P2, not P1:** it needs an outage of the AI service, and the data stays correct: the session is ended as `error` when it's next read (F25), with a realistic duration (215 s for session 24).
+
+**Status: remaining.** The fix is to reset the count only after the AI has actually answered. Owner and mitigation in the release decision.
+
+---
+
+### F37 — The header always shows the same company name · P3 · LIVE + CODE
+
+The badge "Tenant: …" in the header comes from a fixed build setting (`VITE_DEV_TENANT_NAME`, [`tenantAtom.ts:11`](../web/src/stores/tenantAtom.ts#L11)), not from the logged-in user. In the soak test, a user of the second company saw "Tenant: Test Corp". Without the setting every user sees "Demo Tenant". The data shown is the user's own (no leak); only the label is wrong. P3.
+
+**Status: remaining.**
+
+---
+
+### F38 — A rate-limited login says the password is wrong · P3 · LIVE
+
+The API allows 5 logins per minute per address (brute-force protection, which works: the 3rd rapid wrong login gets 429). The login page turns **any** error into "Invalid email or password." ([`LoginPage.tsx:30`](../web/src/pages/auth/LoginPage.tsx#L30)), so a user with the right password is told it's wrong while the limit lasts. P3: wording, with a short-lived effect.
+
+**Status: remaining.**
 ---
 
 ### F8 — "Required" column in the fit/gap table is always empty · P2 · LIVE
@@ -845,6 +904,8 @@ It becomes **P1 if it's seen happening**.
 - [`PortfolioPage.tsx:50`](../web/src/pages/portfolio/PortfolioPage.tsx#L50)
 - [`VacancyEditPage.tsx:39`](../web/src/pages/vacancies/VacancyEditPage.tsx#L39)
 
+**Also found in the soak test (2026-10-02):** two more pages have **no** error handling at all, so a 404 throws an uncaught error and leaves a blank page: the live monitor ([`LiveMonitorPage.tsx:78`](../web/src/pages/monitor/LiveMonitorPage.tsx#L78)) and the fit/gap report ([`FitGapReportPage.tsx:47`](../web/src/pages/fitgap/FitGapReportPage.tsx#L47)). Seen every run when the second company opened the first company's links; no data was shown (the API answered 404).
+
 **How I reproduced it:** `GET /api/v1/vacancies/99999` correctly returns **404** "Vacancy not found". The edit page catches that error and silently renders the empty form.
 
 This bug was **already reported** in the source repo's tracker (ticket #2, plus duplicate #4) with good acceptance criteria. It was closed as **"not planned"**, but the bug is still in the code.
@@ -966,6 +1027,7 @@ The first version of this file covered only part of the code. Here's where each 
 | — | **F28, M11** | Found in a manual review after v1.0.0: crashed interviews had "complete" portfolios with L1, and the AI's own "level 0" became L1 on a retry |
 | F7 | **F30** | The F7 fix failed with the real AI in live testing: it gave each skill a second id in the coverage data, and the AI sometimes copied that one |
 | F6 | **F6** | Re-reproduced in a normal live interview: the AI said goodbye early and the session was saved `all_covered` with its only skill `not_yet` |
+| — | **F35, F36, F37, F38** | Found in a 20-run soak test (two companies, real browser, two real AI interviews): the lists hid everything past the newest 20 (P1, fixed), an AI outage mid-interview is never shown to the candidate, the header badge shows a fixed company name, and a rate-limited login says the password is wrong |
 | — | **F31, F32, F33, F34** | Found in the end-to-end test (API checks plus a real browser and a real interview): ending an interview shows "Connection lost" (an F25 regression), the PDF export fails after an override, a level click changes the wrong skill, and the monitor of a finished interview says "Live" |
 | F17 bullet "company chosen from unchecked data" | **F23** (P1) | Found while fixing F2: exploiting it gave full read and write access to another company. Re-ranked from P2 to P1. |
 
@@ -975,6 +1037,7 @@ The first version of this file covered only part of the code. Here's where each 
 
 - **Setup:** backend (Rails + Sidekiq), PostgreSQL 18 and Redis 8, all run natively on my machine, plus the website (Vite). The first pass used a dummy AI key and fake AI responses for the AI-dependent parts.
 - **Live interviews (2026-09-30):** with a real, free AI key, real voice interviews were run end to end. This found F25, F26 and the normal-flow path of F6. Two local limits: the WebSocket library had to be rebuilt with encryption support on Windows (a local build problem, not a product bug), and the **free key is rate-limited**, so the background AI calls (coverage updates, portfolios) can fail with "Rate limited" during live tests.
+- **Soak test (2026-10-02):** the whole product 20 times in a visible Chrome (scripted with Playwright), with two companies: login and navigation, creating and editing assessments and vacancies, invites, exports, fit/gap, the candidate link, then logging out and in as the other company **in the same browser**, opening the first company's links directly (every API response scanned for the first company's names), and an API isolation sweep. Two runs included a real AI interview. After every run the API and background-job logs were read for errors. Result: 381 of 383 steps passed, **no data leak between the companies in any run**, no server errors. It found F35–F38 and two more pages for F21; one AI run failed during a Gemini outage (reproduced outside the app).
 - **End-to-end test (2026-10-01):** every API endpoint was called as the recruiter and the candidate would, for two companies (65 checks). Then a real Chrome was driven by a script (Playwright), visible on screen: the recruiter logged in, built an assessment and a vacancy through the forms, invited a candidate; the candidate passed the hardware check and held a real voice interview with the AI, with a fake microphone playing a recorded answer; then the recruiter used the portfolio, fit/gap, exports, override and transcript pages. This found F31–F34. Two notes from it: a background worker started before a fix keeps running the old code until it's restarted (an old worker reproduced F30 after it was fixed), and portfolios generated before F28 still show the invented L1 until they're regenerated.
 - **Test data:** two companies. Company A is the default one. Company B has one confidential candidate report: level L4 in "Negotiation", with a quote.
 - **How:** I called the running API directly with Company A's normal login. Two exceptions: F1, where I got a Company B login, and F6, which needs no login at all. For F5, I ran the portfolio generator from the command line with a fake AI response.

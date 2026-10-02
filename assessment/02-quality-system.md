@@ -60,6 +60,7 @@ One spec file per **class of risk**, not a coverage percentage:
 | [`useAudioWebSocket.test.ts`](../web/src/hooks/useAudioWebSocket.test.ts) (F31 block) and [`InterviewEnd.test.tsx`](../web/src/pages/interview/InterviewEnd.test.tsx) | **F31** a candidate who ends the interview is told "Connection lost" | After End Interview, and after the time runs out, the page shows "Interview Complete"; a real drop still reconnects |
 | [`f32_pdf_export_spec.rb`](../api/spec/requests/f32_pdf_export_spec.rb) | **F32** the PDF export crashes on characters its font can't encode | A portfolio with an override, or with symbols such as `→` and `≥` in the evidence, exports as a PDF |
 | [`LevelRadio.test.tsx`](../web/src/components/assessment/LevelRadio.test.tsx) | **F33** a level click changes another skill | With two level pickers on a page, clicking the second one's "L2" changes only the second; every option has its own id |
+| [`AssessmentListPage.test.tsx`](../web/src/pages/assessments/AssessmentListPage.test.tsx), [`VacancyListPage.test.tsx`](../web/src/pages/vacancies/VacancyListPage.test.tsx) and [`PortfolioPage.test.tsx`](../web/src/pages/portfolio/PortfolioPage.test.tsx) | **F35** records past the first page of 20 are unreachable | The 21st assessment and vacancy can be reached; fit/gap offers a vacancy beyond the newest 20; a short list shows no page controls |
 | [`critical_path_spec.rb`](../api/spec/requests/critical_path_spec.rb) | **Regression on the main journey** | Log in → assessment → invite → candidate opens it; interview → portfolio → fit/gap |
 
 **Two design choices keep the net honest:**
@@ -194,6 +195,7 @@ Every fix follows the same order: **a failing check is pushed first, then the fi
 | **F31** a candidate who ends the interview is told "Connection lost" *(found in the end-to-end browser test; an F25 regression)* | [36827787574](https://github.com/yond44/yonda-quality-net/actions/runs/36827787574): 3 web checks failing (the F25 checks green) | [36827803414](https://github.com/yond44/yonda-quality-net/actions/runs/36827803414) (F31 no longer flagged) | The page marks a close it asked for; the close handler ignores it instead of reporting a lost connection |
 | **F32** the PDF export fails after an override *(found in the end-to-end test)* | [36827823866](https://github.com/yond44/yonda-quality-net/actions/runs/36827823866): API 2/3 failing with 500 | [36827849551](https://github.com/yond44/yonda-quality-net/actions/runs/36827849551) (F32 no longer flagged) | A Unicode TrueType font (DejaVu Sans) instead of PDF's built-in fonts |
 | **F33** a level click changes another skill *(found in the end-to-end browser test)* | [36827870194](https://github.com/yond44/yonda-quality-net/actions/runs/36827870194): 2 web checks failing | [36827898429](https://github.com/yond44/yonda-quality-net/actions/runs/36827898429) (all checks green) | Each level picker gets its own id prefix (`useId`) |
+| **F35** the lists only show the newest 20 *(found in the soak test)* | [36970071541](https://github.com/yond44/yonda-quality-net/actions/runs/36970071541): 3 web checks failing | [36970269123](https://github.com/yond44/yonda-quality-net/actions/runs/36970269123) (F35 no longer flagged) | Page controls on both lists; the fit/gap choice loads every vacancy |
 
 For F1, the spec's assertions are unchanged between red and green. Only its setup line changed (it no longer needs to handle the missing column), and the commit message says so.
 
@@ -792,6 +794,34 @@ One entry per fix, in the order they were fixed. Each says what was red, the roo
   - **One component fixed,** so every form that uses it is fixed: vacancy (new and edit), assessment skills, and the override panel.
   - **The test checks both** the behaviour (the right handler is called) and the cause (no duplicate ids), so a future change that brings back shared ids fails CI.
 - **Green:** [36827898429](https://github.com/yond44/yonda-quality-net/actions/runs/36827898429); in the browser, the vacancy is saved with the levels chosen.
+
+### F35: the lists only showed the newest 20 assessments and vacancies (P1, found in the soak test)
+
+- **Red:** [36970071541](https://github.com/yond44/yonda-quality-net/actions/runs/36970071541), 3 web checks failing.
+- **Root cause:** the API pages its lists (20 per page, `meta.total_pages`), but the two list pages always asked for page 1 and had no page controls, and the fit/gap vacancy choice used that same first page. Nobody noticed with a handful of test records; the soak test created enough to cross 20.
+- **Files changed:**
+  - [`Pager.tsx`](../web/src/components/Pager.tsx): Previous / Page X of Y / Next, shown only when there's more than one page
+  - [`AssessmentListPage.tsx:36-50`](../web/src/pages/assessments/AssessmentListPage.tsx#L36-L50) and [`:109`](../web/src/pages/assessments/AssessmentListPage.tsx#L109): keeps the current page and shows the pager; [`VacancyListPage.tsx`](../web/src/pages/vacancies/VacancyListPage.tsx) the same
+  - [`vacancies.ts:19-28`](../web/src/services/vacancies.ts#L19-L28): `listAll()` fetches every page, 100 at a time
+  - [`PortfolioPage.tsx:46`](../web/src/pages/portfolio/PortfolioPage.tsx#L46): the fit/gap choice uses `listAll()`
+- **Before -> after:**
+  ```tsx
+  // AssessmentListPage (and VacancyListPage)
+  // BEFORE: page 1 only, no way to ask for more
+  assessmentsApi.list().then((res) => setAssessments(res.data.assessments))
+  // AFTER: the current page, plus a pager from meta.total_pages
+  assessmentsApi.list(page).then((res) => { setAssessments(res.data.assessments); setTotalPages(res.data.meta?.total_pages ?? 1); })
+  <Pager page={page} totalPages={totalPages} onChange={setPage} />
+
+  // PortfolioPage, fit/gap choice
+  // BEFORE: vacanciesApi.list()     -> the newest 20
+  // AFTER:  vacanciesApi.listAll()  -> every page, 100 at a time
+  ```
+- **Why this way:**
+  - **Pages for the lists, everything for the choice.** A list people browse reads better a page at a time; a choice must offer every option, or some fit/gap comparisons are impossible.
+  - **No API change.** The API already paged correctly and caps a page at 100; the defect was only that the web never asked for page 2.
+  - **The tests fake the HTTP layer, not the service,** so they check what the recruiter can reach, not how the page fetches it.
+- **Green:** [36970269123](https://github.com/yond44/yonda-quality-net/actions/runs/36970269123); in the browser with the real data, page 2 opens an old assessment and fit/gap runs against the oldest vacancy.
 
 ## Assumptions
 
