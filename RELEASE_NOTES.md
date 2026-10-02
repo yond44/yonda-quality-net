@@ -1,5 +1,27 @@
 # Release notes
 
+## v1.0.3
+
+*Fixes one P1 found in a 20-run soak test after v1.0.2. Use this version instead of v1.0.2 and earlier.*
+
+### What this version delivers
+
+- **F35: every assessment and vacancy can be reached in the app.** The Assessments and Vacancies lists have page controls (Previous / Page X of Y / Next) once there are more than 20. Before, everything past the newest 20 was hidden, so older assessments, their candidates and results could only be opened by typing a URL. The fit/gap "Choose vacancy" list now offers every vacancy, not just the newest 20.
+- Everything in v1.0.2 and earlier.
+
+### Before deploying (required)
+
+- Everything listed for v1.0.2, v1.0.1 and v1.0.0 below. This version changes only the web app: **no migration, no new setting**.
+
+### Known issues in this version
+
+- **17 lower-severity findings remain** (P2/P3): F9–F21, F34, and three new ones from the soak test:
+  - **F36 (P2):** if the AI service fails in the middle of an interview, the candidate isn't told; the server keeps reconnecting. The session is still recorded correctly (ended as an error when next opened).
+  - **F37 (P3):** the header badge shows a fixed company name, whoever is logged in.
+  - **F38 (P3):** a login blocked by the 5-per-minute limit says "Invalid email or password." even when the password is right.
+- Two more pages (live monitor, fit/gap report) show a blank page instead of "not found" for a record the user can't open (added to F21; no data is shown).
+- Everything listed under "Known issues" for v1.0.2 still applies.
+
 ## v1.0.2
 
 *Fixes four P1 findings found after v1.0.1: one in live testing with the real AI (F30), three in an end-to-end test with a real browser and a real interview (F31–F33). Use this version instead of v1.0.1 and v1.0.0.*
