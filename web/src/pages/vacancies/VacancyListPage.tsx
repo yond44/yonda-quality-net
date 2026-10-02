@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import Pager from "@/components/Pager";
 import { vacanciesApi } from "@/services/vacancies";
 import { Plus, Briefcase, ChevronRight } from "lucide-react";
 import type { Vacancy } from "@/types";
@@ -11,14 +12,21 @@ export default function VacancyListPage() {
   const [vacancies, setVacancies] = useState<Vacancy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  // The API returns 20 at a time; older vacancies are on later pages (audit F35).
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const navigate = useNavigate();
 
   useEffect(() => {
-    vacanciesApi.list()
-      .then((res) => setVacancies(res.data.vacancies))
+    setLoading(true);
+    vacanciesApi.list(page)
+      .then((res) => {
+        setVacancies(res.data.vacancies);
+        setTotalPages(res.data.meta?.total_pages ?? 1);
+      })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
-  }, []);
+  }, [page]);
 
   return (
     <div className="space-y-4">
@@ -65,6 +73,8 @@ export default function VacancyListPage() {
           ))}
         </div>
       )}
+
+      {!loading && <Pager page={page} totalPages={totalPages} onChange={setPage} />}
     </div>
   );
 }

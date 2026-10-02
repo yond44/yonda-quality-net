@@ -42,9 +42,10 @@ export default function PortfolioPage() {
   }, [sessionId]);
 
   useEffect(() => {
-    Promise.all([fetchPortfolio(), vacanciesApi.list(), sessionsApi.get(Number(sessionId))])
-      .then(([, vRes, sRes]) => {
-        setVacancies(vRes.data.vacancies);
+    // Every vacancy, not just the newest 20, so fit/gap can use any of them (audit F35).
+    Promise.all([fetchPortfolio(), vacanciesApi.listAll(), sessionsApi.get(Number(sessionId))])
+      .then(([, allVacancies, sRes]) => {
+        setVacancies(allVacancies);
         setCandidateName(sRes.data.session.candidate_name ?? null);
       })
       .catch(() => {})

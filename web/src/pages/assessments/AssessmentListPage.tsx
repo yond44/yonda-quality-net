@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import Pager from "@/components/Pager";
 import { assessmentsApi } from "@/services/assessments";
 import { Plus, Clock, ChevronRight } from "lucide-react";
 import type { Assessment } from "@/types";
@@ -31,15 +32,22 @@ export default function AssessmentListPage() {
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  // The API returns 20 at a time; older assessments are on later pages (audit F35).
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const navigate = useNavigate();
 
   useEffect(() => {
+    setLoading(true);
     assessmentsApi
-      .list()
-      .then((res) => setAssessments(res.data.assessments))
+      .list(page)
+      .then((res) => {
+        setAssessments(res.data.assessments);
+        setTotalPages(res.data.meta?.total_pages ?? 1);
+      })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
-  }, []);
+  }, [page]);
 
   return (
     <div className="space-y-4">
@@ -97,6 +105,8 @@ export default function AssessmentListPage() {
           ))}
         </div>
       )}
+
+      {!loading && <Pager page={page} totalPages={totalPages} onChange={setPage} />}
     </div>
   );
 }
