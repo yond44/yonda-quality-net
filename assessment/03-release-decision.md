@@ -1,4 +1,29 @@
-# 03 — Release decision: v1.0.2 (supersedes v1.0.1 and v1.0.0)
+# 03 — Release decision: v1.0.3 (supersedes v1.0.2 and earlier)
+
+## Update, 2026-10-02: ship v1.0.3
+
+**Decision: SHIP v1.0.3, with the conditions and accepted risks below. Do not roll out v1.0.2 or earlier.**
+**Release owner:** yond44.
+
+**What happened after v1.0.2:** before submitting, I ran a **soak test**: the whole product 20 times in a real browser, with two companies, two real AI interviews, and the API and background-job logs read after every run.
+- **381 of 383 steps passed. No data leaked between the companies in any of the 20 runs** (lists after switching accounts in the same browser, the first company's links opened by the second, every API response scanned, and the API isolation sweep). No server errors.
+- It found **F35 (P1)**: the Assessments and Vacancies lists only showed the newest 20, so older assessments, their results, and older vacancies (including for fit/gap) could only be reached by typing a URL. This was in the original code, and every client would hit it within weeks. Fixed test-first: red [36970071541](https://github.com/yond44/yonda-quality-net/actions/runs/36970071541), green [36970269123](https://github.com/yond44/yonda-quality-net/actions/runs/36970269123). Checked in the browser with 30 assessments and 25 vacancies.
+- It also found three smaller issues, recorded and accepted below (F36, F37, F38), and two more pages for F21.
+- One AI interview failed because **Google's Gemini Live was down** (error 1011, reproduced outside the app, recovered within the hour). The second AI run passed end to end.
+- **The release gate on v1.0.3 says ✅ RELEASABLE:** [36970472169](https://github.com/yond44/yonda-quality-net/actions/runs/36970472169).
+
+**Conditions:** the same as v1.0.2 (below). This version changes only the web app: no migration, no new setting.
+
+**Extra accepted risks, owner yond44:**
+- **F36 (P2):** if the AI service fails in the middle of an interview, the server keeps reconnecting and the candidate is never told. *Mitigation:* the session is still recorded correctly (ended as `error` when next opened, F25); watch the logs for `Gemini closed unexpectedly` during the first clients' interviews. *First fix of the next version:* count a reconnect as a success only once the AI has answered.
+- **F37 (P3):** the header badge shows a fixed company name. *Mitigation:* no data is affected; set the badge from the logged-in user in the next version.
+- **F38 (P3):** a rate-limited login says "Invalid email or password." *Mitigation:* the limit lasts a minute; show a "too many attempts" message in the next version.
+- **F21 (P2), widened:** the live monitor and fit/gap pages also show a blank page instead of "not found" for a record the user can't open. No data is shown.
+
+**The count:** all **18** P0/P1 findings are fixed (F35 added). **17** P2/P3 remain (F9–F21, F34, F36, F37, F38).
+
+---
+
 
 ## Update, 2026-10-01 (latest): ship v1.0.2
 
